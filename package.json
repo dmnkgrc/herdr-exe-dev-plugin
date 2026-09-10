@@ -1,0 +1,13 @@
+{
+  "name": "herdr-exe-dev-plugin",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "check": "node --check src/core.mjs && node --check src/action.mjs && node --check src/confirm.mjs && node --check src/provision.mjs && npm test"
+  }
+}
