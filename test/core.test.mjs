@@ -7,6 +7,7 @@ import test from "node:test";
 import { installFlock } from "./fixture.mjs";
 import {
   MissingMappingError,
+  ROOT,
   allocate,
   assertSameSeed,
   captureSeed,
@@ -119,6 +120,18 @@ function executeScript(script, root, home) {
     },
   });
 }
+
+test("the plugin exposes only starting, reconnecting and deleting", () => {
+  const manifest = fs.readFileSync(
+    path.join(ROOT, "herdr-plugin.toml"),
+    "utf8",
+  );
+  const actions = Array.from(
+    manifest.matchAll(/^\[\[actions\]\]\nid = "([^"]+)"/gm),
+    ([, id]) => id,
+  );
+  assert.deepEqual(actions, ["start-agent", "reconnect", "delete"]);
+});
 
 test("captures two real repository layouts and executes the generated bundle seed script", (t) => {
   for (const name of ["flat", "nested"]) {

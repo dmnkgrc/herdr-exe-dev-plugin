@@ -60,25 +60,58 @@ An optional committed `.herdr/exe.json` supplies remote argv arrays:
 
 All fields are optional. `remoteUrl` overrides the source origin and must be a credential-free HTTPS or SSH Git URL. Without either, the VM has no inferred origin. Such a mapping cannot pass guarded deletion's publication check; adding an origin later requires deliberate manual reconciliation, not automatic adoption.
 
-Starting a VM authorizes its committed `setup` command. This is trusted project code, executed remotely after the exact seed is installed. Setup is never run locally. `start` and `check` are separate explicit actions. Submission of a command is not proof of successful completion or application readiness.
+Starting a VM authorizes its committed `setup` command. This is trusted project code, executed remotely after the exact seed is installed. Setup is never run locally. `start` and `check` are separate manual maintenance commands. Submission of a command is not proof of successful completion or application readiness.
 
 ## Actions and recovery
 
-The plugin assigns no default keybindings. List its actions with `herdr plugin action list --plugin exe-dev`. From the source worktree's Herdr pane, invoke an action by its qualified name:
+The plugin exposes three actions:
+
+- **Start worktree VM:** create and seed the worktree's VM if none exists, run its committed setup, then launch the configured agent in a new remote tab. An existing VM is reused without reseeding. Missing CLIs fail explicitly; no login is copied. Inspect the tab to confirm startup and authentication.
+- **Reconnect:** reuse the saved machine and workspace without allocation, reseeding or another agent. This explicit navigation action may enable its saved machine profile and focus the remote workspace.
+- **Delete:** open a separate typed-name confirmation pane and run the safeguards below.
+
+List them with `herdr plugin action list --plugin exe-dev`. From the source worktree's Herdr pane, invoke one by its qualified name:
 
 ```sh
-herdr plugin action invoke exe-dev.start-pi
+herdr plugin action invoke exe-dev.start-agent
 ```
 
-This explicitly starts or opens a VM and submits Pi; it is not an installation check. To assign a shortcut, use a `[[keys.command]]` entry with `type = "plugin_action"` and `command = "exe-dev.start-pi"` in your Herdr configuration. Choose an unused key rather than replacing existing navigation bindings.
+This can allocate a billable VM; it is not an installation check.
 
-- **Start configured agent / Pi / Claude / Codex:** show a provisioning pane, then submit the selected CLI in a new remote tab. Missing CLIs fail explicitly; no provider installation or login is copied. Inspect the tab to confirm startup and authentication.
-- **Reconnect:** reuse the saved machine and workspace without allocation, reseeding or another agent. This explicit navigation action may enable its saved machine profile and focus the remote workspace.
-- **Shell / Start / Check:** create a new remote tab. They never type into an existing agent.
-- **Status:** report saved state and authenticated provider inventory, including incomplete preparations. It does not claim application readiness.
-- **Retry setup:** rerun only the frozen setup after a completed seed and failed setup, then finish attachment. A remote lock prevents overlapping setup attempts. Local configuration changes are not picked up.
-- **Recover:** reconcile an uncertain creation, finish a confirmed creation or incomplete attachment, confirm absence after an uncertain deletion, or retry exact local cleanup for a deleted tombstone. It never issues another `new` or `rm`. A never-attempted intent requires an explicit agent start.
-- **Delete:** open a separate typed-name confirmation pane and run the safeguards below.
+### Keyboard shortcuts
+
+Installing the plugin does not change your keys. To bind the three actions, add these entries to your Herdr configuration and run `herdr server reload-config`:
+
+```toml
+[[keys.command]]
+key = "prefix+alt+e"
+type = "plugin_action"
+command = "exe-dev.start-agent"
+description = "Start worktree VM"
+
+[[keys.command]]
+key = "prefix+alt+r"
+type = "plugin_action"
+command = "exe-dev.reconnect"
+description = "Reconnect to worktree VM"
+
+[[keys.command]]
+key = "prefix+alt+d"
+type = "plugin_action"
+command = "exe-dev.delete"
+description = "Delete worktree VM"
+```
+
+Press and release your prefix, then press Alt+E, Alt+R or Alt+D. With `prefix = "ctrl+a"`, that means Ctrl+A followed by the Alt chord. Delete still requires typed confirmation.
+
+### Manual maintenance
+
+Recovery and inspection are retained outside the three-action menu. Invoke `src/action.mjs` directly as described below, not through `herdr plugin action invoke`:
+
+- `status` reports saved state and authenticated inventory, not application readiness.
+- `shell`, `start` and `check` open a fresh remote tab for inspection or a frozen project command.
+- `retry-setup` retries frozen setup only after a completed seed and failed setup. A remote lock prevents overlapping attempts.
+- `recover` reconciles uncertain creation or deletion and retries owned local cleanup. It never issues another `new` or `rm`; a never-attempted intent needs Start worktree VM.
 
 Mappings use the worktree's Git administrative directory and common directory, not pane IDs. Moving a linked worktree preserves that identity; siblings cannot inherit a removed sibling's VM. For a removed worktree or moved repository, set `HERDR_EXE_DEV_MAPPING` to its saved 64-character mapping ID. This bypasses local-checkout lookup. IDs are reported by Status and are the directory names under `HERDR_PLUGIN_STATE_DIR/mappings`.
 

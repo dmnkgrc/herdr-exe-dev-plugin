@@ -1,79 +1,25 @@
 id = "exe-dev"
 name = "exe.dev"
-version = "0.1.0"
+version = "0.2.0"
 min_herdr_version = "0.9.0"
 description = "Persistent exe.dev VMs for clean committed Git worktrees."
 platforms = ["linux", "macos"]
 
 [[actions]]
 id = "start-agent"
-title = "Create or open exe.dev agent"
-contexts = ["workspace", "pane"]
-command = ["node", "src/action.mjs"]
-
-[[actions]]
-id = "start-pi"
-title = "Start Pi in exe.dev"
-contexts = ["workspace", "pane"]
-command = ["node", "src/action.mjs"]
-
-[[actions]]
-id = "start-claude"
-title = "Start Claude in exe.dev"
-contexts = ["workspace", "pane"]
-command = ["node", "src/action.mjs"]
-
-[[actions]]
-id = "start-codex"
-title = "Start Codex in exe.dev"
-contexts = ["workspace", "pane"]
-command = ["node", "src/action.mjs"]
-
-[[actions]]
-id = "shell"
-title = "Open exe.dev shell"
-contexts = ["workspace", "pane"]
-command = ["node", "src/action.mjs"]
-
-[[actions]]
-id = "status"
-title = "Show exe.dev status"
-contexts = ["workspace", "pane"]
-command = ["node", "src/action.mjs"]
-
-[[actions]]
-id = "start"
-title = "Run committed exe.dev start command"
-contexts = ["workspace", "pane"]
-command = ["node", "src/action.mjs"]
-
-[[actions]]
-id = "check"
-title = "Run committed exe.dev check command"
-contexts = ["workspace", "pane"]
-command = ["node", "src/action.mjs"]
-
-[[actions]]
-id = "retry-setup"
-title = "Retry failed exe.dev setup"
+title = "Start worktree VM"
 contexts = ["workspace", "pane"]
 command = ["node", "src/action.mjs"]
 
 [[actions]]
 id = "reconnect"
-title = "Reconnect to exe.dev workspace"
-contexts = ["workspace", "pane"]
-command = ["node", "src/action.mjs"]
-
-[[actions]]
-id = "recover"
-title = "Recover pending exe.dev creation"
+title = "Reconnect to worktree VM"
 contexts = ["workspace", "pane"]
 command = ["node", "src/action.mjs"]
 
 [[actions]]
 id = "delete"
-title = "Delete exe.dev VM…"
+title = "Delete worktree VM…"
 contexts = ["workspace", "pane"]
 command = ["node", "src/action.mjs"]
 
