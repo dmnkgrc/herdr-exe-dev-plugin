@@ -106,7 +106,7 @@ if (mode === "ssh") {
       print({});
     } else throw new Error(`Unexpected provider argv: ${args}`);
   } else {
-    if (args.length !== 17 || !args.at(-1).startsWith("bash -lc '"))
+    if (args.length !== 21 || !args.at(-1).startsWith("bash -lc '"))
       throw new Error("Remote command serialization changed.");
     const input = fs.readFileSync(0);
     execute(

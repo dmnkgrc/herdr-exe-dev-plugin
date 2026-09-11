@@ -15,6 +15,7 @@ import {
   credentialFreeUrl,
   initializeRoute,
   inspectionScript,
+  knownHostsFile,
   load,
   prepareVm,
   sshG,
@@ -164,7 +165,11 @@ test("SSH serializes one shell-quoted command under OpenSSH joined-command seman
   const fixture = project(t, "flat");
   const [, mapped] = entry(t, fixture);
   const args = remoteArgs(mapped, "set -eu\nprintf '%s\\n' SCRIPT_OK");
-  assert.equal(args.length, 17);
+  assert.equal(args.length, 21);
+  assert.ok(args.includes("StrictHostKeyChecking=accept-new"));
+  assert.ok(
+    args.includes(`UserKnownHostsFile="${knownHostsFile(mapped.stateDir)}"`),
+  );
   const result = spawnSync("sh", ["-c", args.at(-1)], {
     encoding: "utf8",
     env: { PATH: process.env.PATH },

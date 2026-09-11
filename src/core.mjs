@@ -475,11 +475,14 @@ export function routeFile(stateDir, entry) {
   if (!NAME.test(entry.vm.name)) throw new Error("Invalid VM name.");
   return path.join(stateDirectory(stateDir, "routes"), `${entry.vm.name}.conf`);
 }
+export function knownHostsFile(stateDir) {
+  return path.join(stateDirectory(stateDir), "known_hosts");
+}
 function sshConfig(value) {
   return `"${value.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
 }
 export function routeText(entry) {
-  return `Host ${entry.vm.name}\n  HostName ${entry.vm.route.host}\n  User ${entry.vm.route.user}\n  IdentityFile ${sshConfig(entry.settings.identityFile)}\n  IdentitiesOnly yes\n  IdentityAgent none\n  ForwardAgent no\n  ControlMaster no\n  ControlPath none\n  BatchMode yes\n`;
+  return `Host ${entry.vm.name}\n  HostName ${entry.vm.route.host}\n  User ${entry.vm.route.user}\n  IdentityFile ${sshConfig(entry.settings.identityFile)}\n  IdentitiesOnly yes\n  IdentityAgent none\n  ForwardAgent no\n  ControlMaster no\n  ControlPath none\n  BatchMode yes\n  UserKnownHostsFile ${sshConfig(knownHostsFile(entry.stateDir))}\n  StrictHostKeyChecking accept-new\n`;
 }
 export function prepareRoute(stateDir, entry) {
   const file = routeFile(stateDir, entry);
@@ -545,7 +548,9 @@ export function sshG(entry, execute = run) {
     !["no", "false"].includes(exactly("forwardagent")) ||
     (values.has("proxycommand") && exactly("proxycommand") !== "none") ||
     (values.has("proxyjump") && exactly("proxyjump") !== "none") ||
-    exactly("batchmode") !== "yes"
+    exactly("batchmode") !== "yes" ||
+    exactly("userknownhostsfile") !== knownHostsFile(entry.stateDir) ||
+    exactly("stricthostkeychecking") !== "accept-new"
   )
     throw new Error(
       `SSH routing is not active for ${entry.vm.name}. Add “Include ${sshConfig(routeFile(entry.stateDir, entry))}” to your ~/.ssh/config, then retry.`,
@@ -709,6 +714,10 @@ export function remoteArgs(entry, command) {
     "ForwardAgent=no",
     "-o",
     "BatchMode=yes",
+    "-o",
+    `UserKnownHostsFile=${sshConfig(knownHostsFile(entry.stateDir))}`,
+    "-o",
+    "StrictHostKeyChecking=accept-new",
     "-o",
     "ConnectTimeout=15",
     `${entry.vm.route.user}@${entry.vm.route.host}`,

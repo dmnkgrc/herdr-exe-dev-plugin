@@ -28,7 +28,9 @@ Create `config.json` in the directory supplied by Herdr as `HERDR_PLUGIN_CONFIG_
 }
 ```
 
-The selected SSH key must already authorize the intended exe.dev account and work noninteractively without an SSH agent; passphrase prompts are unsupported. Configure SSH host trust separately. The plugin never copies the key, changes account authentication, forwards an SSH agent, or edits `~/.ssh/config`.
+The selected SSH key must already authorize the intended exe.dev account and work noninteractively without an SSH agent; passphrase prompts are unsupported. The plugin never copies the key, changes account authentication, forwards an SSH agent, or edits `~/.ssh/config`.
+
+VM host keys are trusted on first use and pinned in `HERDR_PLUGIN_STATE_DIR/known_hosts`, which no other SSH connection reads. A freshly created VM has no key you could have verified in advance, and the plugin never prompts, so its first connection accepts the key it is offered and every later one must match it exactly. Your own `~/.ssh/known_hosts` is untouched, and the `exe.dev` control plane is not covered: trust that host yourself, with plain `ssh exe.dev`, before the first allocation.
 
 Before allocation it creates a private exact-host snippet in `HERDR_PLUGIN_STATE_DIR/routes`. Add an Include for that directory to your own SSH configuration, before broader rules that would override it:
 
@@ -36,7 +38,7 @@ Before allocation it creates a private exact-host snippet in `HERDR_PLUGIN_STATE
 Include "/absolute/path/to/plugin-state/routes/*.conf"
 ```
 
-The first missing-Include error reports a concrete snippet path. Retrying an agent start keeps that same allocation intent and alias. `ssh -G` must prove the selected identity, host, user, port and disabled forwarding/multiplexing. Extra identities and proxy routes are refused. Identity paths may contain spaces, but not control characters or SSH substitution tokens.
+The first missing-Include error reports a concrete snippet path. Retrying an agent start keeps that same allocation intent and alias. `ssh -G` must prove the selected identity, host, user, port, disabled forwarding/multiplexing and the pinned known-hosts file. Extra identities and proxy routes are refused. Identity paths may contain spaces, but not control characters or SSH substitution tokens.
 
 Provider-reported direct and username-prefixed routes, such as `vm+example@vm.exe.xyz`, are supported. The initial snippet is updated only if it still exactly matches the plugin's provisional contents. After creation, provider identity and routing are frozen; configuration edits apply to new mappings, not existing VMs.
 
