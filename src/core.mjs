@@ -20,9 +20,6 @@ const REVISION = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 const NAME = /^[a-z0-9][a-z0-9-]{2,62}$/;
 const USER = /^[a-z_][a-z0-9_+.-]*$/i;
 const HOST = /^[a-z0-9.-]+$/i;
-const ENV_NAME = /^[A-Z][A-Z0-9_]*$/;
-const ACCOUNT = /^[a-z0-9][a-z0-9.@_-]*$/i;
-const SECRET_ENV_FILE = ".config/herdr-exe-dev/env";
 const PHASES = new Set([
   "intent",
   "creating",
@@ -342,95 +339,68 @@ export function pushHomeFiles(entry, files, execute = run) {
     );
   return files.length;
 }
-export function secretEnv(configDir) {
-  const config = readJson(
+export function secretFiles(configDir) {
+  const map = readJson(
     path.join(configDir, "config.json"),
     "operator config",
-  );
-  const map = config.secretEnv;
+  ).secretFiles;
   if (map === undefined) return [];
   if (!map || typeof map !== "object" || Array.isArray(map))
     throw new Error(
-      "secretEnv must map environment variable names to op:// secret references.",
+      "secretFiles must map home-relative paths to the command that prints each file.",
     );
-  const account = config.onePasswordAccount;
-  if (account !== undefined && (!text(account) || !ACCOUNT.test(account)))
-    throw new Error(
-      "onePasswordAccount must be a 1Password account name or sign-in address.",
-    );
-  return Object.entries(map).map(([name, reference]) => {
-    if (!ENV_NAME.test(name))
+  return Object.entries(map).map(([relative, command]) => {
+    if (
+      !text(relative) ||
+      path.isAbsolute(relative) ||
+      path.normalize(relative).split(path.sep).includes("..")
+    )
       throw new Error(
-        `secretEnv names must look like SHOUTING_SNAKE_CASE variables: ${name}`,
+        `secretFiles paths must be relative to the remote home directory: ${relative}`,
       );
-    if (!text(reference) || !reference.startsWith("op://"))
-      throw new Error(`secretEnv ${name} must be an op:// secret reference.`);
-    return { name, reference, account };
+    if (!Array.isArray(command) || !command.length || !command.every(text))
+      throw new Error(
+        `secretFiles ${relative} must be a command and its arguments, as a list of non-empty strings.`,
+      );
+    return { relative, command };
   });
 }
-function readSecret(variable) {
+function readSecret(file) {
+  const [program, ...args] = file.command;
   // Deliberately not the shared runner: its failures quote stdout, and stdout
-  // here is the secret.
-  const result = spawnSync(
-    "op",
-    [
-      ...(variable.account ? ["--account", variable.account] : []),
-      "read",
-      "--no-newline",
-      variable.reference,
-    ],
-    { encoding: "utf8", timeout: 120000, maxBuffer: 1048576, input: "" },
-  );
+  // here is the secret. No shell either, so the configured arguments cannot
+  // become a second command.
+  const result = spawnSync(program, args, {
+    encoding: "utf8",
+    timeout: 120000,
+    maxBuffer: 1048576,
+    input: "",
+  });
   if (result.error?.code === "ENOENT")
     throw new Error(
-      "The 1Password CLI (op) is not on PATH; install it or drop secretEnv from the operator config.",
+      `The command configured for ${file.relative} is not on PATH: ${program}`,
     );
   if (result.error || result.status !== 0)
     throw new Error(
-      `Reading ${variable.name} from 1Password failed: ${(
+      `Reading ${file.relative} failed: ${(
         result.error?.message ||
         result.stderr?.trim() ||
         `exit ${result.status}`
       ).slice(0, 2000)}`,
     );
-  if (!text(result.stdout))
-    throw new Error(
-      `1Password returned an empty or multi-line value for ${variable.name}; only single-line secrets can become environment variables.`,
-    );
+  if (!result.stdout.length)
+    throw new Error(`The command for ${file.relative} printed nothing.`);
   return result.stdout;
 }
-export function pushSecretEnv(entry, variables, execute = run) {
-  if (!variables.length) return 0;
-  const file = quote(SECRET_ENV_FILE);
-  const source = `if [ -r "$HOME/${SECRET_ENV_FILE}" ]; then . "$HOME/${SECRET_ENV_FILE}"; fi`;
-  remote(
-    entry,
-    [
-      "set -eu",
-      "umask 077",
-      'cd "$HOME"',
-      `mkdir -p ${quote(path.dirname(SECRET_ENV_FILE))}`,
-      `cat > ${file}`,
-      `chmod 600 ${file}`,
-      // Interactive shells are how the operator reaches the VM, and an agent
-      // started from one inherits whatever the rc file exported.
-      "for rc in .profile .bashrc .zshrc; do",
-      `  if ! grep -qF ${quote(SECRET_ENV_FILE)} "$rc" 2>/dev/null; then`,
-      `    printf '%s\\n' ${quote(source)} >> "$rc"`,
-      "  fi",
-      "done",
-    ].join("\n"),
-    {
-      input: variables
-        .map(
-          (variable) =>
-            `export ${variable.name}=${quote(readSecret(variable))}\n`,
-        )
-        .join(""),
-    },
-    execute,
-  );
-  return variables.length;
+export function pushSecretFiles(entry, files, execute = run) {
+  for (const file of files)
+    remote(
+      entry,
+      `set -eu\numask 077\ncd "$HOME"\nmkdir -p ${quote(path.dirname(file.relative))}\ncat > ${quote(file.relative)}\nchmod 600 ${quote(file.relative)}`,
+      { input: readSecret(file) },
+      execute,
+    );
+  return files.length;
 }
 export function credentialFreeUrl(value) {
   if (!text(value) || /[\t ]/.test(value)) return false;

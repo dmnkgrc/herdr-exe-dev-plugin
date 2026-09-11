@@ -25,13 +25,13 @@ import {
   prepareVm,
   providerList,
   pushHomeFiles,
-  pushSecretEnv,
+  pushSecretFiles,
   recoverCreation,
   reconcileDeletion,
   remote,
   run,
   save,
-  secretEnv,
+  secretFiles,
   sshG,
   validateExisting,
   verifyBinding,
@@ -287,12 +287,12 @@ export function action(env = process.env) {
       );
       pushHomeFiles(entry, configured);
     }
-    const secrets = secretEnv(configDir);
+    const secrets = secretFiles(configDir);
     if (secrets.length) {
       progress(
-        `Reading ${secrets.length} secrets from 1Password and exporting them on the VM.`,
+        `Resolving ${secrets.length} configured secret files onto the VM.`,
       );
-      pushSecretEnv(entry, secrets);
+      pushSecretFiles(entry, secrets);
     }
     if (id === "shell")
       return {

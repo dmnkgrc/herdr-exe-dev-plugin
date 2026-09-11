@@ -28,7 +28,7 @@ Create `config.json` in the directory supplied by Herdr as `HERDR_PLUGIN_CONFIG_
 }
 ```
 
-`identityFile` is required; the rest have defaults. See [Carrying agent configuration to the VM](#carrying-agent-configuration-to-the-vm) for the optional `baseVm`, `homeFiles`, `secretEnv` and `onePasswordAccount` settings.
+`identityFile` is required; the rest have defaults. See [Carrying agent configuration to the VM](#carrying-agent-configuration-to-the-vm) for the optional `baseVm`, `homeFiles` and `secretFiles` settings.
 
 The selected SSH key must already authorize the intended exe.dev account and work noninteractively without an SSH agent; passphrase prompts are unsupported. The plugin never copies the key, changes account authentication, forwards an SSH agent, or edits `~/.ssh/config`.
 
@@ -71,24 +71,28 @@ This is the one place the plugin sends local data other than Git history, and it
 
 The two settings compose: a base carries the bulk that rarely changes, and `homeFiles` carries the few things that expire or must not be baked into a disk image.
 
-### Injecting secrets from 1Password
+### Writing secrets that are not on disk locally
 
-An optional `secretEnv` maps environment variable names to `op://` secret references, resolved locally with the 1Password CLI and exported on the VM:
+`homeFiles` copies a file you already have. An optional `secretFiles` covers the case where you do not: it maps a path relative to the remote home directory to a local command that prints that file's content. Which secret manager you use is your business, not the plugin's:
 
 ```json
 {
-  "onePasswordAccount": "example.1password.com",
-  "secretEnv": {
-    "CURSOR_API_KEY": "op://Employee/Cursor API Key/credential"
+  "secretFiles": {
+    ".pi/agent/auth.json": [
+      "op",
+      "read",
+      "op://Example/pi auth.json/notesPlain"
+    ],
+    ".config/some-tool/token": ["pass", "show", "work/some-tool"]
   }
 }
 ```
 
-Names must look like `SHOUTING_SNAKE_CASE`, values must start with `op://`, and only single-line secrets work. `onePasswordAccount` is optional and selects among several signed-in accounts; without it `op` picks its own default, which may not be the account holding the item.
+Each value must be the command with its arguments as a list of strings. The list is executed directly, with no shell, so an argument containing `;` or `$(…)` stays an argument. Paths must stay inside the remote home directory. Output is streamed over stdin, so a secret never appears in an argument list, a log line or an error message, and the file is written `0600` and rewritten on every start, which keeps a rotated credential current.
 
-Each value is read with `op read --no-newline` and streamed over stdin, so it never appears in an argument list, a log line or an error message. On the VM the variables land in `~/.config/herdr-exe-dev/env` as `0600`, and a guarded source line is appended once to `.profile`, `.bashrc` and `.zshrc`, so an agent started from an interactive shell inherits them. The file is rewritten on every start, which keeps a rotated key current.
+A credential the agent reads from the environment will not work here. The provider's SSH daemon sets no `SSH_CLIENT` and does not go through PAM, so no shell startup file and no `/etc/environment` entry is ever read; the remote Herdr server, and the agent it spawns, see only the daemon's own environment. Write the credential to the file the tool reads instead.
 
-This writes the resolved secret, in plain text, to a file on a provider-managed VM. Prefer it over `homeFiles` for credentials an agent reads from the environment, but list only secrets you accept the provider being able to read.
+This writes the resolved secret, in plain text, to a file on a provider-managed VM. Configure only secrets you accept the provider being able to read.
 
 VM host keys are trusted on first use and pinned in `HERDR_PLUGIN_STATE_DIR/known_hosts`, which no other SSH connection reads. A freshly created VM has no key you could have verified in advance, and the plugin never prompts, so its first connection accepts the key it is offered and every later one must match it exactly. Your own `~/.ssh/known_hosts` is untouched, and the `exe.dev` control plane is not covered: trust that host yourself, with plain `ssh exe.dev`, before the first allocation.
 
