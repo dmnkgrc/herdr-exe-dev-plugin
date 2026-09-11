@@ -11,6 +11,7 @@ import {
   allocate,
   assertSameSeed,
   captureSeed,
+  cloneUrls,
   createBundle,
   credentialFreeUrl,
   initializeRoute,
@@ -226,6 +227,26 @@ test("published history is cloned on the VM and only unpublished commits are bun
   assert.equal(reseeded.status, 0, reseeded.stderr);
   assert.equal(run("git", ["-C", second, "rev-parse", "HEAD"]), delta.revision);
   assert.equal(run("git", ["-C", second, "rev-list", "--count", "HEAD"]), "2");
+});
+
+test("cloning prefers the integration host over an origin the VM may not resolve", (t) => {
+  assert.deepEqual(cloneUrls("git@cortea-github:cortea-ai/cortea.git"), [
+    "https://github.int.exe.xyz/cortea-ai/cortea.git",
+    "git@cortea-github:cortea-ai/cortea.git",
+  ]);
+  assert.deepEqual(cloneUrls("ssh://git@origin.example.test/project.git"), [
+    "ssh://git@origin.example.test/project.git",
+  ]);
+  const fixture = project(t, "flat");
+  const [, mapped] = entry(t, fixture);
+  mapped.seed.origin = "git@cortea-github:cortea-ai/cortea.git";
+  const script = seedScript(mapped, false);
+  const [first, second] = cloneUrls(mapped.seed.origin);
+  assert.ok(
+    script.indexOf(first) < script.indexOf(second),
+    "the integration URL must be cloned before the raw origin",
+  );
+  assert.match(script, /\|\| \{ rm -rf .+; git clone /);
 });
 
 test("VM names carry the worktree directory without breaking the provider name rules", () => {

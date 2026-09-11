@@ -360,6 +360,14 @@ export function integrationUrl(origin) {
   const url = `https://${INTEGRATION_HOST}/${repo[1]}/${repo[2]}.git`;
   return url === origin ? undefined : url;
 }
+export function cloneUrls(origin) {
+  // The integration host leads: a laptop origin is often an SSH alias that only
+  // resolves in the operator's ~/.ssh/config, so trying it first guarantees a
+  // failed attempt on the VM. The origin stays as the fallback for repositories
+  // the exe.dev GitHub integration does not cover.
+  const integration = integrationUrl(origin);
+  return integration ? [integration, origin] : [origin];
+}
 export function projectConfig(root, revision) {
   let exists;
   try {
@@ -836,8 +844,11 @@ export function seedScript(entry, bundled = true) {
     return `${preamble}git init --object-format=${entry.seed.revision.length === 64 ? "sha256" : "sha1"} ${root}\ncd ${root}\n${fetch}${checkout}`;
   const clone = (url) =>
     `git clone --quiet --no-checkout --origin origin ${quote(url)} ${root}`;
-  const fallback = integrationUrl(entry.seed.origin);
-  return `${preamble}${clone(entry.seed.origin)}${fallback ? ` || { rm -rf ${root}; ${clone(fallback)}; }` : ""}\ncd ${root}\n${fetch}git rev-parse --verify --quiet ${quote(`${entry.seed.revision}^{commit}`)} >/dev/null || { echo 'The recorded commit is missing on the VM; publish the branch, then start again.' >&2; exit 1; }\n${checkout}`;
+  const [primary, ...rest] = cloneUrls(entry.seed.origin);
+  const attempts = rest
+    .map((url) => ` || { rm -rf ${root}; ${clone(url)}; }`)
+    .join("");
+  return `${preamble}${clone(primary)}${attempts}\ncd ${root}\n${fetch}git rev-parse --verify --quiet ${quote(`${entry.seed.revision}^{commit}`)} >/dev/null || { echo 'The recorded commit is missing on the VM; publish the branch, then start again.' >&2; exit 1; }\n${checkout}`;
 }
 export function setupScript(entry) {
   return entry.project.setup
@@ -890,7 +901,7 @@ export function prepareVm(stateDir, entry, bundle, transport = {}) {
       }
       progress(
         entry.seed.origin
-          ? `Cloning ${entry.seed.origin} on the VM and checking out ${entry.seed.branch}.`
+          ? `Cloning ${cloneUrls(entry.seed.origin)[0]} on the VM and checking out ${entry.seed.branch}.`
           : `Creating the ${entry.seed.branch} checkout on the VM.`,
       );
       remote(entry, seedScript(entry, uploaded), {}, execute);
