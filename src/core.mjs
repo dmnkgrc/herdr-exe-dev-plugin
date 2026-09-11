@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 
 export const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 export const TAG = "herdr-exe-dev";
+export const INTEGRATION_HOST = "github.int.exe.xyz";
 export const SESSION = "exe-dev";
 export const REMOTE_ROOT = "/home/exedev/project";
 export const HERDR_VERSION = "0.9.0";
@@ -303,6 +304,22 @@ export function credentialFreeUrl(value) {
     return false;
   }
 }
+export function integrationUrl(origin) {
+  if (!text(origin)) return undefined;
+  const scp = /^[^@/]+@[a-z0-9.-]+:(.+)$/i.exec(origin);
+  let pathname;
+  if (scp) pathname = scp[1];
+  else
+    try {
+      pathname = new URL(origin).pathname;
+    } catch {
+      return undefined;
+    }
+  const repo = /^\/?([\w.-]+)\/([\w.-]+?)(?:\.git)?\/?$/.exec(pathname);
+  if (!repo) return undefined;
+  const url = `https://${INTEGRATION_HOST}/${repo[1]}/${repo[2]}.git`;
+  return url === origin ? undefined : url;
+}
 export function projectConfig(root, revision) {
   let exists;
   try {
@@ -444,9 +461,30 @@ export function verifyBundle(seed, file) {
 }
 export function createBundle(seed, file) {
   if (regular(file, true)) return verifyBundle(seed, file);
+  const exclude = seed.origin ? ["--not", "--remotes=origin"] : [];
+  if (
+    exclude.length &&
+    !run("git", [
+      "-C",
+      seed.root,
+      "rev-list",
+      "--max-count=1",
+      "HEAD",
+      ...exclude,
+    ])
+  )
+    return;
   const temporary = `${file}.${randomUUID()}.tmp`;
   try {
-    run("git", ["-C", seed.root, "bundle", "create", temporary, "HEAD"]);
+    run("git", [
+      "-C",
+      seed.root,
+      "bundle",
+      "create",
+      temporary,
+      "HEAD",
+      ...exclude,
+    ]);
     fs.chmodSync(temporary, 0o600);
     verifyBundle(seed, temporary);
     fs.renameSync(temporary, file);
@@ -739,11 +777,19 @@ export function remote(entry, command, options = {}, execute = run) {
 export function commandScript(argvValue) {
   return `cd ${quote(REMOTE_ROOT)} && exec ${argvValue.map(quote).join(" ")}`;
 }
-export function seedScript(entry) {
-  const origin = entry.seed.origin
-    ? `git remote add origin ${quote(entry.seed.origin)}\n`
+export function seedScript(entry, bundled = true) {
+  const root = quote(REMOTE_ROOT);
+  const fetch = bundled
+    ? `git fetch --no-tags "$HOME/herdr-exe-seed.bundle" HEAD\ntest "$(git rev-parse FETCH_HEAD)" = ${quote(entry.seed.revision)}\n`
     : "";
-  return `set -eu\numask 077\ntest ! -e ${quote(REMOTE_ROOT)} && test ! -L ${quote(REMOTE_ROOT)}\ngit init --object-format=${entry.seed.revision.length === 64 ? "sha256" : "sha1"} ${quote(REMOTE_ROOT)}\ncd ${quote(REMOTE_ROOT)}\ngit fetch --no-tags "$HOME/herdr-exe-seed.bundle" HEAD\ntest "$(git rev-parse FETCH_HEAD)" = ${quote(entry.seed.revision)}\ngit switch --no-track -C ${quote(entry.seed.branch)} FETCH_HEAD\n${origin}rm -f "$HOME/herdr-exe-seed.bundle"`;
+  const checkout = `git switch --no-track -C ${quote(entry.seed.branch)} ${quote(entry.seed.revision)}\nrm -f "$HOME/herdr-exe-seed.bundle"`;
+  const preamble = `set -eu\numask 077\ntest ! -e ${root} && test ! -L ${root}\n`;
+  if (!entry.seed.origin)
+    return `${preamble}git init --object-format=${entry.seed.revision.length === 64 ? "sha256" : "sha1"} ${root}\ncd ${root}\n${fetch}${checkout}`;
+  const clone = (url) =>
+    `git clone --quiet --no-checkout --origin origin ${quote(url)} ${root}`;
+  const fallback = integrationUrl(entry.seed.origin);
+  return `${preamble}${clone(entry.seed.origin)}${fallback ? ` || { rm -rf ${root}; ${clone(fallback)}; }` : ""}\ncd ${root}\n${fetch}git rev-parse --verify --quiet ${quote(`${entry.seed.revision}^{commit}`)} >/dev/null || { echo 'The recorded commit is missing on the VM; publish the branch, then start again.' >&2; exit 1; }\n${checkout}`;
 }
 export function setupScript(entry) {
   return entry.project.setup
@@ -786,13 +832,20 @@ export function prepareVm(stateDir, entry, bundle, transport = {}) {
         );
       entry.phase = "seeding";
       save(stateDir, entry);
-      verifyBundle(entry.seed, bundle);
+      const uploaded = Boolean(regular(bundle, true));
+      if (uploaded) {
+        verifyBundle(entry.seed, bundle);
+        progress(
+          `Uploading ${Math.round(fs.statSync(bundle).size / 1e6)} MB of unpublished Git history to ${entry.vm.route.host}; this takes minutes with no output.`,
+        );
+        transfer(entry, bundle);
+      }
       progress(
-        `Uploading ${Math.round(fs.statSync(bundle).size / 1e6)} MB of Git history to ${entry.vm.route.host}; a large repository takes several minutes with no output.`,
+        entry.seed.origin
+          ? `Cloning ${entry.seed.origin} on the VM and checking out ${entry.seed.branch}.`
+          : `Creating the ${entry.seed.branch} checkout on the VM.`,
       );
-      transfer(entry, bundle);
-      progress(`Creating the ${entry.seed.branch} checkout on the VM.`);
-      remote(entry, seedScript(entry), {}, execute);
+      remote(entry, seedScript(entry, uploaded), {}, execute);
       entry.seeded = true;
       save(stateDir, entry);
       fs.rmSync(bundle, { force: true });
@@ -1075,8 +1128,9 @@ export function openPane(stateDir, entry, argvValue, title, execute = run) {
   return pane;
 }
 export function inspectionScript(entry) {
+  const fallback = integrationUrl(entry.seed.origin);
   const origin = entry.seed.origin
-    ? `test "$(git remote get-url origin)" = ${quote(entry.seed.origin)}\ntimeout 45 git fetch --prune --no-tags origin '+refs/heads/*:refs/remotes/origin/*'\n`
+    ? `url=$(git remote get-url origin)\ntest "$url" = ${quote(entry.seed.origin)}${fallback ? ` || test "$url" = ${quote(fallback)}` : ""}\ntimeout 45 git fetch --prune --no-tags origin '+refs/heads/*:refs/remotes/origin/*'\n`
     : 'test -z "$(git remote)" || exit 1\necho "No origin is configured; cannot prove remote work is published." >&2\nexit 1\n';
   return `set -eu\nexec 9>"$HOME/.herdr-exe-setup.lock"\nflock -n 9\nrepo=${quote(REMOTE_ROOT)}\ncd "$repo"\ntest "$(git rev-parse --show-toplevel)" = "$repo"\n${origin}test -z "$(git stash list)"\ntest "$(git worktree list --porcelain | grep -c '^worktree ')" = 1\ntest -z "$(git status --porcelain --untracked-files=all)"\ntest -n "$(git symbolic-ref --quiet HEAD)"\ntest -z "$(git rev-list --branches --tags HEAD --not --remotes=origin)"\nlocal_tags=$(git for-each-ref --format='%(objectname) %(refname)' refs/tags)\nif test -n "$local_tags"; then\n  remote_tags=$(timeout 30 git ls-remote --tags --refs origin)\n  while read -r object ref; do\n    printf '%s\\n' "$remote_tags" | grep -Fxq "$(printf '%s\\t%s' "$object" "$ref")"\n  done <<< "$local_tags"\nfi`;
 }

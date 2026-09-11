@@ -16,6 +16,7 @@ const allocations = (f) =>
 
 test("real scripts provision an ordinary repository once, run no remote command and reconnect without seeding", (t) => {
   const f = fixture(t);
+  f.git(f.source, "fetch", "-q", "origin");
   f.git(f.source, "commit", "--allow-empty", "-qm", "unpublished seed");
   assert.equal(
     successful(f.invoke("start-agent")).phase,
@@ -29,6 +30,10 @@ test("real scripts provision an ordinary repository once, run no remote command 
   assert.notEqual(
     f.git(f.bare, "rev-parse", "refs/heads/main"),
     mapped.seed.revision,
+  );
+  assert.equal(
+    f.git(remote, "rev-parse", "refs/remotes/origin/main"),
+    f.git(f.bare, "rev-parse", "refs/heads/main"),
   );
   assert.equal(successful(f.provision()).phase, "workspace-focused");
   const before = f.transport();

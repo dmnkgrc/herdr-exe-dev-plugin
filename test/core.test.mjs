@@ -75,10 +75,19 @@ function project(t, name, origin = true) {
       "remote",
       "add",
       "origin",
-      "https://example.test/fixture.git",
+      "ssh://git@origin.example.test/project.git",
     ]);
   }
   return { base, root, bare };
+}
+function serveOrigin(bare, home) {
+  fs.mkdirSync(home, { recursive: true });
+  fs.writeFileSync(
+    path.join(home, "origin-ssh"),
+    `#!/bin/sh\nexec git-upload-pack '${bare}'\n`,
+    { mode: 0o755 },
+  );
+  return home;
 }
 function settings(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "herdr-exe-key-"));
@@ -116,6 +125,8 @@ function executeScript(script, root, home) {
       HOME: home,
       GIT_CONFIG_GLOBAL: "/dev/null",
       GIT_CONFIG_NOSYSTEM: "1",
+      GIT_SSH_COMMAND: path.join(home, "origin-ssh"),
+      GIT_SSH_VARIANT: "ssh",
     },
   });
 }
@@ -159,6 +170,61 @@ test("captures two real repository layouts and executes the generated bundle see
     );
     assert.ok(fs.existsSync(state));
   }
+});
+
+test("published history is cloned on the VM and only unpublished commits are bundled", (t) => {
+  const fixture = project(t, "flat");
+  run("git", [
+    "-C",
+    fixture.root,
+    "update-ref",
+    "refs/remotes/origin/master",
+    "HEAD",
+  ]);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "exe-bundle-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const file = path.join(dir, "seed.bundle");
+  const published = captureSeed(fixture.root);
+  createBundle(published, file);
+  assert.equal(fs.existsSync(file), false);
+  const home = serveOrigin(fixture.bare, path.join(fixture.base, "home"));
+  const remoteRoot = path.join(fixture.base, "remote project");
+  const [, cloned] = entry(t, fixture);
+  const seeded = executeScript(seedScript(cloned, false), remoteRoot, home);
+  assert.equal(seeded.status, 0, seeded.stderr);
+  assert.equal(
+    run("git", ["-C", remoteRoot, "rev-parse", "HEAD"]),
+    published.revision,
+  );
+  assert.equal(
+    run("git", ["-C", remoteRoot, "rev-parse", "refs/remotes/origin/master"]),
+    published.revision,
+  );
+  fs.writeFileSync(path.join(fixture.root, "local.txt"), "local");
+  run("git", ["-C", fixture.root, "add", "."]);
+  run("git", ["-C", fixture.root, "commit", "-qm", "unpublished"]);
+  const delta = captureSeed(fixture.root);
+  createBundle(delta, file);
+  assert.equal(
+    run("git", ["bundle", "list-heads", file]),
+    `${delta.revision} HEAD`,
+  );
+  const empty = path.join(fixture.base, "empty");
+  run("git", ["init", "-q", empty]);
+  assert.notEqual(
+    spawnSync("git", ["-C", empty, "bundle", "verify", file], {
+      encoding: "utf8",
+    }).status,
+    0,
+    "a delta bundle must not verify without its published prerequisites",
+  );
+  fs.copyFileSync(file, path.join(home, "herdr-exe-seed.bundle"));
+  const second = path.join(fixture.base, "second project");
+  const [, updated] = entry(t, fixture);
+  const reseeded = executeScript(seedScript(updated, true), second, home);
+  assert.equal(reseeded.status, 0, reseeded.stderr);
+  assert.equal(run("git", ["-C", second, "rev-parse", "HEAD"]), delta.revision);
+  assert.equal(run("git", ["-C", second, "rev-list", "--count", "HEAD"]), "2");
 });
 
 test("SSH serializes one shell-quoted command under OpenSSH joined-command semantics", (t) => {

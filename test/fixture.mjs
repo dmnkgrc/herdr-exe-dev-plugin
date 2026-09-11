@@ -39,6 +39,8 @@ export function fixture(t, projectConfig) {
     HOME: directory,
     GIT_CONFIG_GLOBAL: "/dev/null",
     GIT_CONFIG_NOSYSTEM: "1",
+    GIT_SSH_COMMAND: path.join(directory, "origin-ssh"),
+    GIT_SSH_VARIANT: "ssh",
   };
   const git = (cwd, ...args) => {
     const result = spawnSync("git", ["-C", cwd, ...args], {

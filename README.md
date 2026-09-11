@@ -46,6 +46,10 @@ Provider-reported direct and username-prefixed routes, such as `vm+example@vm.ex
 
 No project configuration is required for an ordinary Git repository. The initial worktree must be clean, attached to a committed branch, and free of initialized submodules or LFS paths. Unpublished commits are included. Local Git configuration, hooks, ignored files, credentials and agent settings are not copied.
 
+When the worktree has an origin, the VM clones it and the laptop uploads a Git bundle of only the commits its `refs/remotes/origin/*` do not already contain — nothing at all when the branch is fully published. A stale local view of origin only makes that bundle larger, except after a force-push that removed commits the laptop still records as published: the bundle then lacks prerequisites the clone cannot supply, and seeding fails without touching the checkout. Fetch and start again. A worktree with no origin still uploads its whole history.
+
+Cloning uses the recorded origin URL. If that fails and the URL names an `owner/repo` pair, the plugin retries once against `https://github.int.exe.xyz/owner/repo.git`, the host an attached [exe.dev GitHub integration](https://exe.dev) serves without placing a token on the VM. Attach yours to the `herdr-exe-dev` tag, or to each VM, before starting a private repository. Whichever URL succeeds becomes the VM's `origin`.
+
 The bundle includes reachable Git history, which can contain old secrets. This is a trusted private Git environment, **not a secret-sanitizing uploader**. Set up agent login and Git authentication on the VM itself. A private origin may need remote authentication before push or deletion checks can work.
 
 An optional committed `.herdr/exe.json` supplies remote argv arrays:
@@ -67,7 +71,7 @@ Starting a VM authorizes its committed `setup` command. This is trusted project 
 
 The plugin exposes three actions:
 
-- **Start worktree VM:** create and seed the worktree's VM if none exists, run its committed setup, then focus the remote workspace. Nothing is launched inside it; start whatever agent or command you want from that shell. An existing VM is reused without reseeding; no login is copied. The provisioning pane reports each step with elapsed time. Uploading the seed has no time limit, because a large repository can take much longer than any fixed one; a dead connection is caught by SSH keepalives instead. A failed upload can be retried by starting again, which reuses the same VM.
+- **Start worktree VM:** create and seed the worktree's VM if none exists, run its committed setup, then focus the remote workspace. Nothing is launched inside it; start whatever agent or command you want from that shell. An existing VM is reused without reseeding; no login is copied. The provisioning pane reports each step with elapsed time. Seeding has no time limit, because a large repository can take much longer than any fixed one; a dead connection is caught by SSH keepalives instead. A failed seed can be retried by starting again, which reuses the same VM.
 - **Reconnect:** reuse the saved machine and workspace without allocation or reseeding. This explicit navigation action may enable its saved machine profile and focus the remote workspace.
 - **Delete:** open a separate typed-name confirmation pane and run the safeguards below.
 
