@@ -46,7 +46,14 @@ export function run(bin, args, options = {}) {
   });
   if (result.error || result.status !== 0)
     throw new Error(
-      `${bin} failed: ${result.error?.message || result.stderr?.trim() || `exit ${result.status}`}`,
+      // The provider reports refusals as JSON on stdout with a nonzero exit, so
+      // reading stderr alone reduces a precise diagnostic to a bare exit code.
+      `${bin} failed: ${(
+        result.error?.message ||
+        result.stderr?.trim() ||
+        result.stdout?.trim() ||
+        `exit ${result.status}`
+      ).slice(0, 4000)}`,
     );
   return result.stdout?.trim() ?? "";
 }

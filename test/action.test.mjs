@@ -163,6 +163,16 @@ test("a configured base is copied instead of allocated, and never inherits its t
   assert.equal(f.mapping().vm.name, provisioned.vm_name);
 });
 
+test("a provider refusal printed on stdout reaches the operator instead of an exit code", (t) => {
+  const f = fixture(t);
+  withBase(f);
+  f.control({ refuseCopy: "--disk cannot be smaller than source (50 GB)" });
+  const failed = f.provision();
+  assert.notEqual(failed.status, 0);
+  assert.match(failed.stderr, /--disk cannot be smaller than source \(50 GB\)/);
+  assert.doesNotMatch(failed.stderr, /ssh failed: exit 1/);
+});
+
 test("a copy that cannot be tagged fails loudly and names the untagged VM", (t) => {
   const f = fixture(t);
   withBase(f);

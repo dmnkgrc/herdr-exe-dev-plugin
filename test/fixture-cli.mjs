@@ -109,6 +109,10 @@ if (mode === "ssh") {
         throw new Error("Unexpected provider copy argv.");
       if (!state.vms.some((vm) => vm.vm_name === args[1]))
         throw new Error(`Unknown copy source: ${args[1]}`);
+      if (control.refuseCopy) {
+        print({ error: control.refuseCopy });
+        process.exit(1);
+      }
       const name = args[2];
       state.vms.push({
         vm_name: name,

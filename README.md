@@ -46,7 +46,7 @@ An optional `baseVm` names an existing VM on the same account to copy, instead o
 }
 ```
 
-Each start then runs `cp <baseVm> <new name> --copy-tags=false`, applies your `cpu`, `memory` and `disk`, and tags the copy `herdr-exe-dev`. Every VM inherits whatever you installed on the base once — agent packages, MCP configuration, language toolchains — with no per-start transfer. Keep the base free of credentials: it is a whole-disk copy, so anything on it, including shell history and tokens, lands on every VM.
+Each start then runs `cp <baseVm> <new name> --copy-tags=false`, applies your `cpu`, `memory` and `disk`, and tags the copy `herdr-exe-dev`. A copy cannot shrink the base's disk, so `disk` must be at least as large as the base's; the provider refuses the copy otherwise and the plugin reports its reason. Every VM inherits whatever you installed on the base once — agent packages, MCP configuration, language toolchains — with no per-start transfer. Keep the base free of credentials: it is a whole-disk copy, so anything on it, including shell history and tokens, lands on every VM.
 
 Tags are deliberately not copied. They belong to whoever maintains the base, and inheriting them would enlist each VM in that owner's tooling. The plugin recognizes only its own `herdr-exe-dev` tag, so if the copy succeeds but tagging fails, the VM is left running and unowned; the error names it and gives the `ssh exe.dev tag` command to adopt it. Provider integrations are not copied either — attach those to `tag:herdr-exe-dev` yourself.
 
