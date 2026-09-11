@@ -280,6 +280,34 @@ test("lost workspace creation is reconciled without duplicating the workspace or
   assert.equal(allocations(f), 1);
 });
 
+test("a VM whose workspace the operator closed can still be deleted", (t) => {
+  const f = fixture(t);
+  successful(f.provision());
+  const mapped = f.mapping();
+  const closed = f.transport();
+  closed.workspaces = [];
+  closed.tabs = [];
+  closed.panes = [];
+  fs.writeFileSync(
+    path.join(f.directory, "transport.json"),
+    JSON.stringify(closed),
+  );
+  const removed = spawnSync(
+    process.execPath,
+    [path.join(ROOT, "src", "confirm.mjs")],
+    {
+      env: { ...f.env, HERDR_EXE_DEV_MAPPING: mapped.id },
+      input: `${mapped.vm.name}\n`,
+      encoding: "utf8",
+      timeout: 30000,
+    },
+  );
+  assert.equal(removed.status, 0, `${removed.stdout}\n${removed.stderr}`);
+  assert.equal(f.mapping().phase, "deleted");
+  assert.equal(f.transport().vms.length, 0);
+  assert.equal(f.transport().machines.length, 0);
+});
+
 test("confirmed deletion rejects unpublished work and active processes, and reconciles a lost delete response", (t) => {
   const f = fixture(t);
   successful(f.provision());

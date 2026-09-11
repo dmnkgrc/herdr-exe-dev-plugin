@@ -1276,7 +1276,11 @@ export function deleteVm(stateDir, entry, typedName, transport = {}) {
   if (typedName !== entry.vm.name)
     throw new Error("Typed VM name does not match; deletion cancelled.");
   validateExisting(entry, execute);
-  verifyBinding(entry, execute);
+  // Only machine ownership is required, not the saved workspace and pane: a
+  // closed workspace is less at risk, not more, and demanding it would leave a
+  // VM whose workspace the operator closed permanently undeletable. The live
+  // scan below still refuses an agent in any workspace.
+  machineProfile(entry, execute);
   activePanes(entry, execute);
   remote(entry, inspectionScript(entry), { timeout: 120000 }, execute);
   activePanes(entry, execute);
