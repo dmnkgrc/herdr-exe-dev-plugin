@@ -30,6 +30,23 @@ Create `config.json` in the directory supplied by Herdr as `HERDR_PLUGIN_CONFIG_
 
 The selected SSH key must already authorize the intended exe.dev account and work noninteractively without an SSH agent; passphrase prompts are unsupported. The plugin never copies the key, changes account authentication, forwards an SSH agent, or edits `~/.ssh/config`.
 
+## Carrying agent configuration to the VM
+
+A VM starts with whatever its image ships, so a coding agent there has none of your settings, plugins or provider logins. An optional `homeFiles` array copies files you name onto each VM, to the same location under its home directory, every time an action reaches it:
+
+```json
+{
+  "homeFiles": [
+    "/Users/example/.pi/agent/settings.json",
+    "/Users/example/.pi/agent/auth.json"
+  ]
+}
+```
+
+Every entry must be an absolute path inside your home directory, a regular file after following symlinks, and at most 1 MiB; directories are not copied. Content is written, not linked, so a path into a dotfile repository works. Copies are created with `umask 077` and refreshed on every start, which keeps an expiring OAuth token current.
+
+This is the one place the plugin sends local data other than Git history, and it sends exactly what you list, including credentials if you list a credential file. Nothing is copied by default. Anyone with access to the VM, and the provider itself, can read what you put there.
+
 VM host keys are trusted on first use and pinned in `HERDR_PLUGIN_STATE_DIR/known_hosts`, which no other SSH connection reads. A freshly created VM has no key you could have verified in advance, and the plugin never prompts, so its first connection accepts the key it is offered and every later one must match it exactly. Your own `~/.ssh/known_hosts` is untouched, and the `exe.dev` control plane is not covered: trust that host yourself, with plain `ssh exe.dev`, before the first allocation.
 
 A VM is named `herdr-exe-<worktree directory>-<random suffix>`, so `.../worktrees/cortea/dmnk-fe-tests-speed` becomes something like `herdr-exe-dmnk-fe-tests-speed-3fdc580f`. The directory name is lowercased, reduced to letters, digits and dashes, and truncated to fit the provider's 63-character limit; the suffix keeps names distinct when two worktrees reduce to the same text. A name is frozen at allocation, so renaming or moving a worktree does not rename its VM.

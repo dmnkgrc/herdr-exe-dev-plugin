@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -283,6 +284,45 @@ export function operatorConfig(configDir) {
     disk: size(value.disk, "disk"),
     sshUser: value.sshUser ?? "exedev",
   };
+}
+export function homeFiles(configDir) {
+  const list = readJson(
+    path.join(configDir, "config.json"),
+    "operator config",
+  ).homeFiles;
+  if (list === undefined) return [];
+  if (!Array.isArray(list) || list.some((item) => !text(item)))
+    throw new Error("homeFiles must be an array of absolute file paths.");
+  const home = os.homedir();
+  return list.map((item) => {
+    const relative = path.relative(home, item);
+    if (
+      !path.isAbsolute(item) ||
+      !relative ||
+      relative.split(path.sep).includes("..") ||
+      path.isAbsolute(relative)
+    )
+      throw new Error(
+        `homeFiles entry must be an absolute path inside ${home}: ${item}`,
+      );
+    // Deliberately follows symlinks: dotfile repositories are the usual source.
+    const stat = fs.statSync(item);
+    if (!stat.isFile())
+      throw new Error(`homeFiles entry is not a regular file: ${item}`);
+    if (stat.size > 1048576)
+      throw new Error(`homeFiles entry exceeds 1 MiB: ${item}`);
+    return { relative, source: item };
+  });
+}
+export function pushHomeFiles(entry, files, execute = run) {
+  for (const file of files)
+    remote(
+      entry,
+      `set -eu\numask 077\ncd "$HOME"\nmkdir -p ${quote(path.dirname(file.relative))}\ncat > ${quote(file.relative)}`,
+      { input: fs.readFileSync(file.source) },
+      execute,
+    );
+  return files.length;
 }
 export function credentialFreeUrl(value) {
   if (!text(value) || /[\t ]/.test(value)) return false;

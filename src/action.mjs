@@ -12,6 +12,7 @@ import {
   createBundle,
   ensureBinding,
   ensureRemoteHerdr,
+  homeFiles,
   initializeRoute,
   installSkill,
   load,
@@ -23,6 +24,7 @@ import {
   prepareRoute,
   prepareVm,
   providerList,
+  pushHomeFiles,
   recoverCreation,
   reconcileDeletion,
   remote,
@@ -275,6 +277,13 @@ export function action(env = process.env) {
       delete entry.rootTerminalId;
       save(stateDir, entry);
       prepareAttachment(stateDir, entry, progress);
+    }
+    const configured = homeFiles(configDir);
+    if (configured.length) {
+      progress(
+        `Copying ${configured.length} configured home files onto the VM.`,
+      );
+      pushHomeFiles(entry, configured);
     }
     if (id === "shell")
       return {

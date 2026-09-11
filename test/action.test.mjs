@@ -69,6 +69,58 @@ test("starting again re-enables the machine and rebinds a dropped remote workspa
   assert.equal(allocations(f), 1);
 });
 
+test("configured home files reach the VM on every start and reject paths outside home", (t) => {
+  const f = fixture(t);
+  const config = path.join(f.directory, "config", "config.json");
+  const settings = path.join(f.directory, ".pi", "agent", "settings.json");
+  const linked = path.join(f.directory, "dotfiles", "auth.json");
+  fs.mkdirSync(path.dirname(settings), { recursive: true });
+  fs.mkdirSync(path.dirname(linked), { recursive: true });
+  fs.writeFileSync(settings, '{"packages":["npm:pi-cursor-sdk"]}');
+  fs.writeFileSync(linked, '{"cursor":{"key":"fixture"}}');
+  fs.symlinkSync(linked, path.join(f.directory, ".pi", "agent", "auth.json"));
+  const operator = JSON.parse(fs.readFileSync(config, "utf8"));
+  fs.writeFileSync(
+    config,
+    JSON.stringify({
+      ...operator,
+      homeFiles: [
+        settings,
+        path.join(f.directory, ".pi", "agent", "auth.json"),
+      ],
+    }),
+  );
+  assert.equal(successful(f.provision()).phase, "workspace-focused");
+  const remoteAgent = path.join(f.directory, "remote-home", ".pi", "agent");
+  assert.equal(
+    fs.readFileSync(path.join(remoteAgent, "settings.json"), "utf8"),
+    '{"packages":["npm:pi-cursor-sdk"]}',
+  );
+  assert.equal(
+    fs.readFileSync(path.join(remoteAgent, "auth.json"), "utf8"),
+    '{"cursor":{"key":"fixture"}}',
+    "a symlinked dotfile is copied by content, not as a broken link",
+  );
+  assert.equal(
+    fs.lstatSync(path.join(remoteAgent, "auth.json")).mode & 0o077,
+    0,
+  );
+  fs.writeFileSync(settings, '{"packages":[]}');
+  assert.equal(successful(f.provision()).phase, "workspace-focused");
+  assert.equal(
+    fs.readFileSync(path.join(remoteAgent, "settings.json"), "utf8"),
+    '{"packages":[]}',
+    "a later start refreshes the copies",
+  );
+  fs.writeFileSync(
+    config,
+    JSON.stringify({ ...operator, homeFiles: ["/etc/hosts"] }),
+  );
+  const escaped = f.provision();
+  assert.notEqual(escaped.status, 0);
+  assert.match(escaped.stderr, /absolute path inside/);
+});
+
 test("lost creation response recovers the recorded bundle without allocating again", (t) => {
   const f = fixture(t);
   f.control({ loseCreateResponse: true, alternateRoute: true });
