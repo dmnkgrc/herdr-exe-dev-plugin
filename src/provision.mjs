@@ -29,5 +29,6 @@ try {
     process.stderr.write("Press any key to close this pane.\n");
     stdin.setRawMode(true);
     await new Promise((resolve) => stdin.once("data", resolve));
+    process.exit(1);
   }
 }
