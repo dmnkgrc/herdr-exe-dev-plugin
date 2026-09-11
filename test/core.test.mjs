@@ -24,6 +24,7 @@ import {
   remoteArgs,
   save,
   seedScript,
+  vmName,
 } from "../src/core.mjs";
 
 function run(command, args, options = {}) {
@@ -225,6 +226,25 @@ test("published history is cloned on the VM and only unpublished commits are bun
   assert.equal(reseeded.status, 0, reseeded.stderr);
   assert.equal(run("git", ["-C", second, "rev-parse", "HEAD"]), delta.revision);
   assert.equal(run("git", ["-C", second, "rev-list", "--count", "HEAD"]), "2");
+});
+
+test("VM names carry the worktree directory without breaking the provider name rules", () => {
+  const valid = /^[a-z0-9][a-z0-9-]{2,62}$/;
+  const named = (root) =>
+    vmName({ root, gitDir: `${root}/.git`, commonDir: `${root}/.git` });
+  const plain = named("/worktrees/cortea/dmnk-fe-tests-speed");
+  assert.match(plain, valid);
+  assert.match(plain, /^herdr-exe-dmnk-fe-tests-speed-[0-9a-f]{8}$/);
+  assert.match(named("/worktrees/DMNK/Feature_Branch.2"), valid);
+  assert.equal(
+    named("/worktrees/DMNK/Feature_Branch.2").slice(0, -9),
+    "herdr-exe-feature-branch-2",
+  );
+  const long = named(`/worktrees/${"section-".repeat(12)}end`);
+  assert.match(long, valid);
+  assert.ok(long.length <= 63);
+  assert.match(named("/worktrees/___"), /^herdr-exe-[0-9a-f]{12}-[0-9a-f]{8}$/);
+  assert.notEqual(plain, named("/worktrees/cortea/dmnk-fe-tests-speed"));
 });
 
 test("SSH serializes one shell-quoted command under OpenSSH joined-command semantics", (t) => {

@@ -32,6 +32,8 @@ The selected SSH key must already authorize the intended exe.dev account and wor
 
 VM host keys are trusted on first use and pinned in `HERDR_PLUGIN_STATE_DIR/known_hosts`, which no other SSH connection reads. A freshly created VM has no key you could have verified in advance, and the plugin never prompts, so its first connection accepts the key it is offered and every later one must match it exactly. Your own `~/.ssh/known_hosts` is untouched, and the `exe.dev` control plane is not covered: trust that host yourself, with plain `ssh exe.dev`, before the first allocation.
 
+A VM is named `herdr-exe-<worktree directory>-<random suffix>`, so `.../worktrees/cortea/dmnk-fe-tests-speed` becomes something like `herdr-exe-dmnk-fe-tests-speed-3fdc580f`. The directory name is lowercased, reduced to letters, digits and dashes, and truncated to fit the provider's 63-character limit; the suffix keeps names distinct when two worktrees reduce to the same text. A name is frozen at allocation, so renaming or moving a worktree does not rename its VM.
+
 Before allocation it creates a private exact-host snippet in `HERDR_PLUGIN_STATE_DIR/routes`. Add an Include for that directory to your own SSH configuration, before broader rules that would override it:
 
 ```sshconfig
@@ -72,8 +74,10 @@ Starting a VM authorizes its committed `setup` command. This is trusted project 
 The plugin exposes three actions:
 
 - **Start worktree VM:** create and seed the worktree's VM if none exists, run its committed setup, then focus the remote workspace. Nothing is launched inside it; start whatever agent or command you want from that shell. An existing VM is reused without reseeding; no login is copied. The provisioning pane reports each step with elapsed time. Seeding has no time limit, because a large repository can take much longer than any fixed one; a dead connection is caught by SSH keepalives instead. A failed seed can be retried by starting again, which reuses the same VM.
-- **Reconnect:** reuse the saved machine and workspace without allocation or reseeding. This explicit navigation action may enable its saved machine profile and focus the remote workspace.
+- **Reconnect:** reuse the saved machine and workspace without allocation or reseeding.
 - **Delete:** open a separate typed-name confirmation pane and run the safeguards below.
+
+Both starting and reconnecting enable the saved machine profile and focus the remote workspace. A workspace that no longer exists, because its remote Herdr session was reset, is bound again instead of failing. The remote workspace only becomes visible once you select that machine in Herdr; its name is reported when the action finishes.
 
 List them with `herdr plugin action list --plugin exe-dev`. From the source worktree's Herdr pane, invoke one by its qualified name:
 

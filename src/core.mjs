@@ -506,8 +506,16 @@ export function assertSameSeed(seed) {
       "Worktree changed while preparing the seed; no VM was allocated.",
     );
 }
-export function vmName(id) {
-  return `herdr-exe-${id.slice(0, 12)}-${randomUUID().replaceAll("-", "").slice(0, 8)}`;
+export function vmName(seed) {
+  const id = mappingId(seed.gitDir, seed.commonDir);
+  const label = path
+    .basename(seed.root)
+    .toLowerCase()
+    .replaceAll(/[^a-z0-9]+/g, "-")
+    .replaceAll(/^-+|-+$/g, "")
+    .slice(0, 44)
+    .replace(/-+$/, "");
+  return `herdr-exe-${label || id.slice(0, 12)}-${randomUUID().replaceAll("-", "").slice(0, 8)}`;
 }
 export function routeFile(stateDir, entry) {
   if (!NAME.test(entry.vm.name)) throw new Error("Invalid VM name.");
@@ -1249,7 +1257,7 @@ export function makeEntry(stateDir, seed, settings, herdrBin) {
     project: seed.project,
     settings,
     herdrBin,
-    vm: { name: vmName(id), route: { host: "", user: settings.sshUser } },
+    vm: { name: vmName(seed), route: { host: "", user: settings.sshUser } },
     phase: "intent",
   };
 }
