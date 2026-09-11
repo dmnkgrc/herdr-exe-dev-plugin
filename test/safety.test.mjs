@@ -64,7 +64,7 @@ test("symlinked state directories and malformed frozen configuration fail closed
   assert.throws(() => load(state, entry.id), /Invalid mapping JSON/);
 });
 
-test("dirty, detached, unborn, LFS and submodule seeds are rejected before allocation", (t) => {
+test("dirty, detached, unborn, LFS and initialized submodule seeds are rejected before allocation", (t) => {
   const f = fixture(t);
   fs.writeFileSync(path.join(f.source, "dirty"), "uncommitted");
   assert.notEqual(f.provision().status, 0);
@@ -98,7 +98,19 @@ test("dirty, detached, unborn, LFS and submodule seeds are rejected before alloc
   );
   fs.mkdirSync(path.join(f.source, "external"));
   f.git(f.source, "commit", "-qm", "submodule fixture");
-  assert.throws(() => captureSeed(f.source), /Submodules/);
+  assert.doesNotThrow(() => captureSeed(f.source));
+  f.git(
+    f.source,
+    "-c",
+    "protocol.file.allow=always",
+    "submodule",
+    "add",
+    "--quiet",
+    f.bare,
+    "vendored",
+  );
+  f.git(f.source, "commit", "-qm", "initialized submodule fixture");
+  assert.throws(() => captureSeed(f.source), /submodules/i);
   const unborn = path.join(f.directory, "unborn");
   fs.mkdirSync(unborn);
   f.git(unborn, "init", "-q");

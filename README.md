@@ -43,7 +43,7 @@ Provider-reported direct and username-prefixed routes, such as `vm+example@vm.ex
 
 ## Repository support
 
-No project configuration is required for an ordinary Git repository. The initial worktree must be clean, attached to a committed branch, and free of tracked submodules or LFS paths. Unpublished commits are included. Local Git configuration, hooks, ignored files, credentials and agent settings are not copied.
+No project configuration is required for an ordinary Git repository. The initial worktree must be clean, attached to a committed branch, and free of initialized submodules or LFS paths. Unpublished commits are included. Local Git configuration, hooks, ignored files, credentials and agent settings are not copied.
 
 The bundle includes reachable Git history, which can contain old secrets. This is a trusted private Git environment, **not a secret-sanitizing uploader**. Set up agent login and Git authentication on the VM itself. A private origin may need remote authentication before push or deletion checks can work.
 

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { stdin } from "node:process";
 import { action } from "./action.mjs";
 
 function provision(env = process.env) {
@@ -22,6 +23,11 @@ function provision(env = process.env) {
 try {
   console.log(JSON.stringify({ ok: true, ...provision() }));
 } catch (error) {
-  console.error(JSON.stringify({ ok: false, error: error.message }));
+  process.stderr.write(`\nexe.dev provisioning failed: ${error.message}\n`);
   process.exitCode = 1;
+  if (stdin.isTTY) {
+    process.stderr.write("Press any key to close this pane.\n");
+    stdin.setRawMode(true);
+    await new Promise((resolve) => stdin.once("data", resolve));
+  }
 }

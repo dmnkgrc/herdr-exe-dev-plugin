@@ -399,9 +399,13 @@ export function captureSeed(requestedCwd) {
       run("git", ["-C", root, "rev-parse", "--git-common-dir"]),
     ),
   );
-  if (run("git", ["-C", root, "submodule", "status", "--recursive"]))
+  if (
+    run("git", ["-C", root, "submodule", "status", "--recursive"])
+      .split("\n")
+      .some((line) => line.trim() && !line.startsWith("-"))
+  )
     throw new Error(
-      "Submodules are not supported; remove them before allocation.",
+      "Initialized submodules are not supported; deinitialize or remove them before allocation.",
     );
   const tracked = run("git", ["-C", root, "ls-files", "-z"]);
   if (
