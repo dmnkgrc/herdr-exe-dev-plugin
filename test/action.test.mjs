@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
-import { ROOT } from "../src/core.mjs";
+import { quote, ROOT } from "../src/core.mjs";
 import { fixture } from "./fixture.mjs";
 
 function successful(result) {
@@ -119,6 +119,52 @@ test("configured home files reach the VM on every start and reject paths outside
   const escaped = f.provision();
   assert.notEqual(escaped.status, 0);
   assert.match(escaped.stderr, /absolute path inside/);
+});
+
+test("1Password references become exported environment variables on the VM", (t) => {
+  const f = fixture(t);
+  const config = path.join(f.directory, "config", "config.json");
+  const operator = JSON.parse(fs.readFileSync(config, "utf8"));
+  const secret = "sk-fixture'quoted$(id)";
+  fs.writeFileSync(
+    path.join(f.directory, "bin", "op"),
+    `#!/bin/sh\ntest "$*" = "--account fixture.1password.com read --no-newline op://Employee/Cursor API Key/credential" || { echo "unexpected op argv: $*" >&2; exit 1; }\nprintf %s ${quote(secret)}\n`,
+    { mode: 0o755 },
+  );
+  fs.writeFileSync(
+    config,
+    JSON.stringify({
+      ...operator,
+      onePasswordAccount: "fixture.1password.com",
+      secretEnv: { CURSOR_API_KEY: "op://Employee/Cursor API Key/credential" },
+    }),
+  );
+  assert.equal(successful(f.provision()).phase, "workspace-focused");
+  const home = path.join(f.directory, "remote-home");
+  const file = path.join(home, ".config", "herdr-exe-dev", "env");
+  assert.equal(fs.lstatSync(file).mode & 0o077, 0);
+  const sourced = spawnSync(
+    "/bin/sh",
+    ["-c", `. ${quote(file)}; printf %s "$CURSOR_API_KEY"`],
+    { encoding: "utf8" },
+  );
+  assert.equal(sourced.stdout, secret, "the value survives shell quoting");
+  assert.equal(successful(f.provision()).phase, "workspace-focused");
+  assert.equal(
+    fs
+      .readFileSync(path.join(home, ".bashrc"), "utf8")
+      .split("\n")
+      .filter((line) => line.includes(".config/herdr-exe-dev/env")).length,
+    1,
+    "the rc hook is appended once, not on every start",
+  );
+  fs.writeFileSync(
+    config,
+    JSON.stringify({ ...operator, secretEnv: { CURSOR_API_KEY: "plain" } }),
+  );
+  const rejected = f.provision();
+  assert.notEqual(rejected.status, 0);
+  assert.match(rejected.stderr, /must be an op:\/\/ secret reference/);
 });
 
 function withBase(f, name = "cortea-base-fixture") {

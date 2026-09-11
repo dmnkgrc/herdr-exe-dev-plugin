@@ -28,7 +28,7 @@ Create `config.json` in the directory supplied by Herdr as `HERDR_PLUGIN_CONFIG_
 }
 ```
 
-`identityFile` is required; the rest have defaults. See [Carrying agent configuration to the VM](#carrying-agent-configuration-to-the-vm) for the optional `baseVm` and `homeFiles` settings.
+`identityFile` is required; the rest have defaults. See [Carrying agent configuration to the VM](#carrying-agent-configuration-to-the-vm) for the optional `baseVm`, `homeFiles`, `secretEnv` and `onePasswordAccount` settings.
 
 The selected SSH key must already authorize the intended exe.dev account and work noninteractively without an SSH agent; passphrase prompts are unsupported. The plugin never copies the key, changes account authentication, forwards an SSH agent, or edits `~/.ssh/config`.
 
@@ -70,6 +70,25 @@ Every entry must be an absolute path inside your home directory, a regular file 
 This is the one place the plugin sends local data other than Git history, and it sends exactly what you list, including credentials if you list a credential file. Nothing is copied by default. Anyone with access to the VM, and the provider itself, can read what you put there.
 
 The two settings compose: a base carries the bulk that rarely changes, and `homeFiles` carries the few things that expire or must not be baked into a disk image.
+
+### Injecting secrets from 1Password
+
+An optional `secretEnv` maps environment variable names to `op://` secret references, resolved locally with the 1Password CLI and exported on the VM:
+
+```json
+{
+  "onePasswordAccount": "example.1password.com",
+  "secretEnv": {
+    "CURSOR_API_KEY": "op://Employee/Cursor API Key/credential"
+  }
+}
+```
+
+Names must look like `SHOUTING_SNAKE_CASE`, values must start with `op://`, and only single-line secrets work. `onePasswordAccount` is optional and selects among several signed-in accounts; without it `op` picks its own default, which may not be the account holding the item.
+
+Each value is read with `op read --no-newline` and streamed over stdin, so it never appears in an argument list, a log line or an error message. On the VM the variables land in `~/.config/herdr-exe-dev/env` as `0600`, and a guarded source line is appended once to `.profile`, `.bashrc` and `.zshrc`, so an agent started from an interactive shell inherits them. The file is rewritten on every start, which keeps a rotated key current.
+
+This writes the resolved secret, in plain text, to a file on a provider-managed VM. Prefer it over `homeFiles` for credentials an agent reads from the environment, but list only secrets you accept the provider being able to read.
 
 VM host keys are trusted on first use and pinned in `HERDR_PLUGIN_STATE_DIR/known_hosts`, which no other SSH connection reads. A freshly created VM has no key you could have verified in advance, and the plugin never prompts, so its first connection accepts the key it is offered and every later one must match it exactly. Your own `~/.ssh/known_hosts` is untouched, and the `exe.dev` control plane is not covered: trust that host yourself, with plain `ssh exe.dev`, before the first allocation.
 
