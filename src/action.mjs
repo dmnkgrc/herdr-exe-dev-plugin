@@ -11,7 +11,6 @@ import {
   checkLocalHerdr,
   createBundle,
   ensureBinding,
-  ensureCli,
   ensureRemoteHerdr,
   initializeRoute,
   installSkill,
@@ -153,12 +152,7 @@ export function action(env = process.env) {
   const id = env.HERDR_PLUGIN_ACTION_ID?.replace(/^exe-dev\./, "");
   if (!id || !stateDir || !configDir)
     throw new Error("Launch this command as a Herdr plugin action.");
-  const launches = new Set([
-    "start-agent",
-    "start-pi",
-    "start-claude",
-    "start-codex",
-  ]);
+  const launches = new Set(["start-agent"]);
   if (
     ![
       ...launches,
@@ -268,15 +262,6 @@ export function action(env = process.env) {
       prepareAttachment(stateDir, entry, progress);
     if (id === "reconnect") attachMachine(stateDir, entry);
     verifyBinding(entry);
-    if (id === "reconnect") {
-      herdr(entry, ["workspace", "focus", entry.workspaceId]);
-      return {
-        action: id,
-        phase: "workspace-focused",
-        vm: entry.vm.name,
-        workspaceId: entry.workspaceId,
-      };
-    }
     if (id === "shell")
       return {
         action: id,
@@ -294,24 +279,13 @@ export function action(env = process.env) {
         pane: openPane(stateDir, entry, hook, `exe.dev ${id}`),
       };
     }
-    const standard = {
-      "start-pi": ["pi"],
-      "start-claude": ["claude"],
-      "start-codex": ["codex"],
-    };
-    const argv = standard[id] ?? entry.settings.argv;
-    ensureCli(entry, argv);
-    progress("Submitting the native agent in a new remote tab.");
+    progress("Focusing the remote worktree workspace.");
+    herdr(entry, ["workspace", "focus", entry.workspaceId]);
     return {
       action: id,
+      phase: "workspace-focused",
       vm: entry.vm.name,
-      phase: "agent-submitted",
-      pane: openPane(
-        stateDir,
-        entry,
-        argv,
-        `exe.dev ${id.replace("start-", "")}`,
-      ),
+      workspaceId: entry.workspaceId,
     };
   });
 }

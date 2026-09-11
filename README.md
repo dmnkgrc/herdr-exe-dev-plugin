@@ -24,8 +24,7 @@ Create `config.json` in the directory supplied by Herdr as `HERDR_PLUGIN_CONFIG_
   "sshUser": "exedev",
   "cpu": 2,
   "memory": "4GB",
-  "disk": "20GB",
-  "argv": ["pi"]
+  "disk": "20GB"
 }
 ```
 
@@ -66,8 +65,8 @@ Starting a VM authorizes its committed `setup` command. This is trusted project 
 
 The plugin exposes three actions:
 
-- **Start worktree VM:** create and seed the worktree's VM if none exists, run its committed setup, then launch the configured agent in a new remote tab. An existing VM is reused without reseeding. Missing CLIs fail explicitly; no login is copied. Inspect the tab to confirm startup and authentication.
-- **Reconnect:** reuse the saved machine and workspace without allocation, reseeding or another agent. This explicit navigation action may enable its saved machine profile and focus the remote workspace.
+- **Start worktree VM:** create and seed the worktree's VM if none exists, run its committed setup, then focus the remote workspace. Nothing is launched inside it; start whatever agent or command you want from that shell. An existing VM is reused without reseeding; no login is copied.
+- **Reconnect:** reuse the saved machine and workspace without allocation or reseeding. This explicit navigation action may enable its saved machine profile and focus the remote workspace.
 - **Delete:** open a separate typed-name confirmation pane and run the safeguards below.
 
 List them with `herdr plugin action list --plugin exe-dev`. From the source worktree's Herdr pane, invoke one by its qualified name:

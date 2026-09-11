@@ -90,8 +90,6 @@ function settings(t) {
     cpu: 2,
     memory: "4GB",
     disk: "20GB",
-    agent: "pi",
-    argv: ["pi"],
   };
 }
 function entry(t, fixture) {

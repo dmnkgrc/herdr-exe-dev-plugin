@@ -14,7 +14,7 @@ const allocations = (f) =>
   f.calls().filter((call) => call.mode === "ssh" && call.args.includes("new"))
     .length;
 
-test("real scripts provision an ordinary repository once, open independent tabs and reconnect without seeding", (t) => {
+test("real scripts provision an ordinary repository once, run no remote command and reconnect without seeding", (t) => {
   const f = fixture(t);
   f.git(f.source, "commit", "--allow-empty", "-qm", "unpublished seed");
   assert.equal(
@@ -22,7 +22,7 @@ test("real scripts provision an ordinary repository once, open independent tabs 
     "preparation-submitted",
   );
   assert.equal(f.transport().vms.length, 0);
-  assert.equal(successful(f.provision()).phase, "agent-submitted");
+  assert.equal(successful(f.provision()).phase, "workspace-focused");
   const mapped = f.mapping();
   const remote = path.join(f.directory, "remote-home", "project");
   assert.equal(f.git(remote, "rev-parse", "HEAD"), mapped.seed.revision);
@@ -30,19 +30,15 @@ test("real scripts provision an ordinary repository once, open independent tabs 
     f.git(f.bare, "rev-parse", "refs/heads/main"),
     mapped.seed.revision,
   );
-  assert.equal(successful(f.provision()).phase, "agent-submitted");
+  assert.equal(successful(f.provision()).phase, "workspace-focused");
   const before = f.transport();
   assert.equal(successful(f.invoke("reconnect")).phase, "workspace-focused");
   assert.deepEqual(f.transport(), before);
   assert.equal(allocations(f), 1);
   assert.equal(before.workspaces.length, 1);
-  assert.equal(before.tabs.length, 3);
-  assert.equal(
-    fs.readFileSync(
-      path.join(f.directory, "remote-home", "agent-runs"),
-      "utf8",
-    ),
-    "agent ran\nagent ran\n",
+  assert.equal(before.tabs.length, 1);
+  assert.ok(
+    !fs.existsSync(path.join(f.directory, "remote-home", "agent-runs")),
   );
 });
 
@@ -64,7 +60,7 @@ test("lost creation response recovers the recorded bundle without allocating aga
   assert.equal(f.mapping().vm.route.host, "vm.exe.xyz");
   assert.equal(allocations(f), 1);
   assert.equal(f.transport().tabs.length, 1);
-  assert.equal(successful(f.provision()).phase, "agent-submitted");
+  assert.equal(successful(f.provision()).phase, "workspace-focused");
 });
 
 test("failed setup retries the frozen hook and completes attachment without reseeding", (t) => {

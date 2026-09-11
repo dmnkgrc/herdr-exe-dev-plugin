@@ -170,8 +170,7 @@ function validateEntry(entry, id) {
     !Number.isSafeInteger(entry.settings.cpu) ||
     entry.settings.cpu < 1 ||
     !/^[1-9][0-9]*GB$/.test(entry.settings.memory) ||
-    !/^[1-9][0-9]*GB$/.test(entry.settings.disk) ||
-    !validateArgv(entry.settings.argv, "mapping argv")
+    !/^[1-9][0-9]*GB$/.test(entry.settings.disk)
   )
     throw new Error("Invalid mapping settings.");
   if (
@@ -281,7 +280,6 @@ export function operatorConfig(configDir) {
     cpu: value.cpu,
     memory: size(value.memory, "memory"),
     disk: size(value.disk, "disk"),
-    argv: argv(value.argv, "argv"),
     sshUser: value.sshUser ?? "exedev",
   };
 }
@@ -1052,9 +1050,6 @@ export function openPane(stateDir, entry, argvValue, title, execute = run) {
       execute,
     );
   return pane;
-}
-export function ensureCli(entry, argvValue, execute = run) {
-  remote(entry, `command -v -- ${quote(argvValue[0])} >/dev/null`, {}, execute);
 }
 export function inspectionScript(entry) {
   const origin = entry.seed.origin

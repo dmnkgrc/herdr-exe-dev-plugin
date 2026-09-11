@@ -80,8 +80,6 @@ export function fixture(t, projectConfig) {
       cpu: 2,
       memory: "4GB",
       disk: "20GB",
-      agent: "pi",
-      argv: ["pi"],
     }),
   );
   fs.writeFileSync(
