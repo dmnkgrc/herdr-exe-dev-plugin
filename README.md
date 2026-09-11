@@ -67,7 +67,7 @@ Starting a VM authorizes its committed `setup` command. This is trusted project 
 
 The plugin exposes three actions:
 
-- **Start worktree VM:** create and seed the worktree's VM if none exists, run its committed setup, then focus the remote workspace. Nothing is launched inside it; start whatever agent or command you want from that shell. An existing VM is reused without reseeding; no login is copied.
+- **Start worktree VM:** create and seed the worktree's VM if none exists, run its committed setup, then focus the remote workspace. Nothing is launched inside it; start whatever agent or command you want from that shell. An existing VM is reused without reseeding; no login is copied. The provisioning pane reports each step with elapsed time. Uploading the seed has no time limit, because a large repository can take much longer than any fixed one; a dead connection is caught by SSH keepalives instead. A failed upload can be retried by starting again, which reuses the same VM.
 - **Reconnect:** reuse the saved machine and workspace without allocation or reseeding. This explicit navigation action may enable its saved machine profile and focus the remote workspace.
 - **Delete:** open a separate typed-name confirmation pane and run the safeguards below.
 

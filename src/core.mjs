@@ -720,12 +720,21 @@ export function remoteArgs(entry, command) {
     "StrictHostKeyChecking=accept-new",
     "-o",
     "ConnectTimeout=15",
+    "-o",
+    "ServerAliveInterval=15",
+    "-o",
+    "ServerAliveCountMax=4",
     `${entry.vm.route.user}@${entry.vm.route.host}`,
     `bash -lc ${quote(command)}`,
   ];
 }
 export function remote(entry, command, options = {}, execute = run) {
-  return execute("ssh", remoteArgs(entry, command), { input: "", ...options });
+  // Keepalives, not a wall clock: seeding and setup are legitimately slow.
+  return execute("ssh", remoteArgs(entry, command), {
+    input: "",
+    timeout: 0,
+    ...options,
+  });
 }
 export function commandScript(argvValue) {
   return `cd ${quote(REMOTE_ROOT)} && exec ${argvValue.map(quote).join(" ")}`;
@@ -752,7 +761,6 @@ export function transferBundle(entry, bundle) {
       remoteArgs(entry, 'umask 077; cat > "$HOME/herdr-exe-seed.bundle"'),
       {
         stdio: [input, "pipe", "pipe"],
-        timeout: 300000,
         maxBuffer: 1024 * 1024,
       },
     );
@@ -767,6 +775,7 @@ export function transferBundle(entry, bundle) {
 export function prepareVm(stateDir, entry, bundle, transport = {}) {
   const execute = transport.run ?? run;
   const transfer = transport.transfer ?? transferBundle;
+  const progress = transport.progress ?? (() => {});
   if (!entry.vm.createdAt || !["created", "setup-failed"].includes(entry.phase))
     throw new Error("Setup is unavailable for this mapping.");
   try {
@@ -778,7 +787,11 @@ export function prepareVm(stateDir, entry, bundle, transport = {}) {
       entry.phase = "seeding";
       save(stateDir, entry);
       verifyBundle(entry.seed, bundle);
+      progress(
+        `Uploading ${Math.round(fs.statSync(bundle).size / 1e6)} MB of Git history to ${entry.vm.route.host}; a large repository takes several minutes with no output.`,
+      );
       transfer(entry, bundle);
+      progress(`Creating the ${entry.seed.branch} checkout on the VM.`);
       remote(entry, seedScript(entry), {}, execute);
       entry.seeded = true;
       save(stateDir, entry);
@@ -786,6 +799,7 @@ export function prepareVm(stateDir, entry, bundle, transport = {}) {
     }
     entry.phase = "preparing";
     save(stateDir, entry);
+    progress("Running committed project setup.");
     remote(entry, setupScript(entry), {}, execute);
     entry.phase = "ready";
     delete entry.error;

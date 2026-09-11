@@ -118,12 +118,11 @@ function provision(stateDir, entry, progress) {
     );
     allocate(stateDir, entry);
   }
-  if (entry.phase === "created") {
+  if (["created", "setup-failed"].includes(entry.phase)) {
     prepareRoute(stateDir, entry);
     validateExisting(entry);
     remote(entry, "true");
-    progress("Transferring the exact Git seed and running committed setup.");
-    prepareVm(stateDir, entry, bundleFile(stateDir, entry));
+    prepareVm(stateDir, entry, bundleFile(stateDir, entry), { progress });
   }
   if (entry.phase === "ready") prepareAttachment(stateDir, entry, progress);
 }
@@ -188,9 +187,12 @@ export function action(env = process.env) {
     ]);
     return { action: id, phase: "confirmation-opened", vm: mapping.vm.name };
   }
+  const started = Date.now();
   const progress = (message) => {
-    if (env.HERDR_EXE_DEV_PROVISION === "1")
-      process.stderr.write(`${message}\n`);
+    if (env.HERDR_EXE_DEV_PROVISION !== "1") return;
+    const seconds = Math.round((Date.now() - started) / 1000);
+    const clock = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+    process.stderr.write(`[${clock}] ${message}\n`);
   };
   const target = mapping?.id ?? mappingId(local.gitDir, local.commonDir);
   return withLock(stateDir, target, () => {
@@ -238,7 +240,10 @@ export function action(env = process.env) {
       provision(stateDir, entry, progress);
       return { action: id, phase: entry.phase, vm: entry.vm.name };
     }
-    if (launches.has(id) && ["intent", "created"].includes(entry.phase))
+    if (
+      launches.has(id) &&
+      ["intent", "created", "setup-failed"].includes(entry.phase)
+    )
       provision(stateDir, entry, progress);
     validateExisting(entry);
     if (id === "retry-setup") {

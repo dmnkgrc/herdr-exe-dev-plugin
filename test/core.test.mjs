@@ -165,7 +165,8 @@ test("SSH serializes one shell-quoted command under OpenSSH joined-command seman
   const fixture = project(t, "flat");
   const [, mapped] = entry(t, fixture);
   const args = remoteArgs(mapped, "set -eu\nprintf '%s\\n' SCRIPT_OK");
-  assert.equal(args.length, 21);
+  assert.equal(args.length, 25);
+  assert.ok(args.includes("ServerAliveInterval=15"));
   assert.ok(args.includes("StrictHostKeyChecking=accept-new"));
   assert.ok(
     args.includes(`UserKnownHostsFile="${knownHostsFile(mapped.stateDir)}"`),
