@@ -47,6 +47,28 @@ test("real scripts provision an ordinary repository once, run no remote command 
   );
 });
 
+test("starting again re-enables the machine and rebinds a dropped remote workspace", (t) => {
+  const f = fixture(t);
+  assert.equal(successful(f.provision()).phase, "workspace-focused");
+  const bound = f.mapping();
+  const file = path.join(f.directory, "transport.json");
+  const dropped = f.transport();
+  dropped.machines[0].enabled = false;
+  dropped.workspaces = [];
+  dropped.tabs = [];
+  dropped.panes = [];
+  fs.writeFileSync(file, JSON.stringify(dropped));
+  const result = successful(f.provision());
+  assert.equal(result.phase, "workspace-focused");
+  assert.equal(result.machine, `exe.dev ${bound.vm.name}`);
+  const restored = f.transport();
+  assert.equal(restored.machines[0].enabled, true);
+  assert.equal(restored.workspaces.length, 1);
+  assert.equal(f.mapping().machineId, bound.machineId);
+  assert.equal(f.mapping().rootPaneId, restored.panes[0].pane_id);
+  assert.equal(allocations(f), 1);
+});
+
 test("lost creation response recovers the recorded bundle without allocating again", (t) => {
   const f = fixture(t);
   f.control({ loseCreateResponse: true, alternateRoute: true });

@@ -265,8 +265,17 @@ export function action(env = process.env) {
       );
     if (!entry.machineId || !entry.workspaceId || !entry.rootPaneId)
       prepareAttachment(stateDir, entry, progress);
-    if (id === "reconnect") attachMachine(stateDir, entry);
-    verifyBinding(entry);
+    attachMachine(stateDir, entry);
+    try {
+      verifyBinding(entry);
+    } catch {
+      progress("The saved remote workspace drifted; binding it again.");
+      delete entry.workspaceId;
+      delete entry.rootPaneId;
+      delete entry.rootTerminalId;
+      save(stateDir, entry);
+      prepareAttachment(stateDir, entry, progress);
+    }
     if (id === "shell")
       return {
         action: id,
@@ -284,12 +293,16 @@ export function action(env = process.env) {
         pane: openPane(stateDir, entry, hook, `exe.dev ${id}`),
       };
     }
-    progress("Focusing the remote worktree workspace.");
+    const machine = `exe.dev ${entry.vm.name}`;
+    progress(
+      `Focusing the remote worktree workspace. Select the ${machine} machine in Herdr to see it.`,
+    );
     herdr(entry, ["workspace", "focus", entry.workspaceId]);
     return {
       action: id,
       phase: "workspace-focused",
       vm: entry.vm.name,
+      machine,
       workspaceId: entry.workspaceId,
     };
   });
