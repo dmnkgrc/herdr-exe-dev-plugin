@@ -97,6 +97,37 @@ if (mode === "ssh") {
       if (control.loseCreateResponse)
         throw new Error("Simulated lost create response.");
       print({});
+    } else if (args[0] === "cp") {
+      if (
+        args.length !== 8 ||
+        args[3] !== "--copy-tags=false" ||
+        !args[4].startsWith("--cpu=") ||
+        !args[5].startsWith("--memory=") ||
+        !args[6].startsWith("--disk=") ||
+        args[7] !== "--json"
+      )
+        throw new Error("Unexpected provider copy argv.");
+      if (!state.vms.some((vm) => vm.vm_name === args[1]))
+        throw new Error(`Unknown copy source: ${args[1]}`);
+      const name = args[2];
+      state.vms.push({
+        vm_name: name,
+        created_at: "fixture-creation-copy",
+        tags: [],
+        ssh_dest: `${name}.exe.xyz`,
+        ssh_host: `${name}.exe.xyz`,
+      });
+      persist();
+      print({});
+    } else if (args[0] === "tag") {
+      if (args.length !== 4 || args[3] !== "--json")
+        throw new Error("Unexpected provider tag argv.");
+      const target = state.vms.find((vm) => vm.vm_name === args[1]);
+      if (!target) throw new Error(`Unknown tag target: ${args[1]}`);
+      if (control.failCopyTag) throw new Error("Simulated tag failure.");
+      target.tags = [...new Set([...target.tags, args[2]])];
+      persist();
+      print({});
     } else if (args[0] === "rm" && args.length === 3 && args[2] === "--json") {
       state.vms = state.vms.filter((vm) => vm.vm_name !== args[1]);
       state.deleted = true;

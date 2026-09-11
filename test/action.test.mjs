@@ -121,6 +121,67 @@ test("configured home files reach the VM on every start and reject paths outside
   assert.match(escaped.stderr, /absolute path inside/);
 });
 
+function withBase(f, name = "cortea-base-fixture") {
+  const transport = f.transport();
+  transport.vms.push({
+    vm_name: name,
+    created_at: "fixture-base",
+    tags: ["cortea-factory-base"],
+    ssh_dest: `${name}.exe.xyz`,
+    ssh_host: `${name}.exe.xyz`,
+  });
+  fs.writeFileSync(
+    path.join(f.directory, "transport.json"),
+    JSON.stringify(transport),
+  );
+  const config = path.join(f.directory, "config", "config.json");
+  fs.writeFileSync(
+    config,
+    JSON.stringify({
+      ...JSON.parse(fs.readFileSync(config, "utf8")),
+      baseVm: name,
+    }),
+  );
+  return name;
+}
+
+test("a configured base is copied instead of allocated, and never inherits its tags", (t) => {
+  const f = fixture(t);
+  const base = withBase(f);
+  assert.equal(successful(f.provision()).phase, "workspace-focused");
+  assert.equal(allocations(f), 0, "a copy must not also allocate a fresh VM");
+  const copy = f
+    .calls()
+    .filter((call) => call.mode === "ssh" && call.args.includes("cp"));
+  assert.equal(copy.length, 1);
+  const provisioned = f.transport().vms.find((vm) => vm.vm_name !== base);
+  assert.deepEqual(
+    provisioned.tags,
+    ["herdr-exe-dev"],
+    "the base's own tags would enlist this VM in its owner's tooling",
+  );
+  assert.equal(f.mapping().vm.name, provisioned.vm_name);
+});
+
+test("a copy that cannot be tagged fails loudly and names the untagged VM", (t) => {
+  const f = fixture(t);
+  withBase(f);
+  f.control({ failCopyTag: true });
+  const failed = f.provision();
+  assert.notEqual(failed.status, 0);
+  const orphan = f.transport().vms.find((vm) => vm.tags.length === 0);
+  assert.ok(orphan, "the copy is retained so the operator can recover it");
+  assert.match(failed.stderr, new RegExp(`ssh exe.dev tag ${orphan.vm_name}`));
+});
+
+test("a base name that is not a safe provider name is refused", (t) => {
+  const f = fixture(t);
+  withBase(f, "cortea base");
+  const failed = f.provision();
+  assert.notEqual(failed.status, 0);
+  assert.match(failed.stderr, /baseVm must be the provider name/);
+});
+
 test("lost creation response recovers the recorded bundle without allocating again", (t) => {
   const f = fixture(t);
   f.control({ loseCreateResponse: true, alternateRoute: true });

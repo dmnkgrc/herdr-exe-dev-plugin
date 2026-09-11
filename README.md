@@ -28,11 +28,33 @@ Create `config.json` in the directory supplied by Herdr as `HERDR_PLUGIN_CONFIG_
 }
 ```
 
+`identityFile` is required; the rest have defaults. See [Carrying agent configuration to the VM](#carrying-agent-configuration-to-the-vm) for the optional `baseVm` and `homeFiles` settings.
+
 The selected SSH key must already authorize the intended exe.dev account and work noninteractively without an SSH agent; passphrase prompts are unsupported. The plugin never copies the key, changes account authentication, forwards an SSH agent, or edits `~/.ssh/config`.
 
 ## Carrying agent configuration to the VM
 
-A VM starts with whatever its image ships, so a coding agent there has none of your settings, plugins or provider logins. An optional `homeFiles` array copies files you name onto each VM, to the same location under its home directory, every time an action reaches it:
+A VM starts with whatever its image ships, so a coding agent there has none of your settings, plugins or provider logins. There are two ways to change that, and they suit different things.
+
+### Copying a prepared VM
+
+An optional `baseVm` names an existing VM on the same account to copy, instead of allocating a fresh one from the provider's stock image:
+
+```json
+{
+  "baseVm": "example-base-vm"
+}
+```
+
+Each start then runs `cp <baseVm> <new name> --copy-tags=false`, applies your `cpu`, `memory` and `disk`, and tags the copy `herdr-exe-dev`. Every VM inherits whatever you installed on the base once — agent packages, MCP configuration, language toolchains — with no per-start transfer. Keep the base free of credentials: it is a whole-disk copy, so anything on it, including shell history and tokens, lands on every VM.
+
+Tags are deliberately not copied. They belong to whoever maintains the base, and inheriting them would enlist each VM in that owner's tooling. The plugin recognizes only its own `herdr-exe-dev` tag, so if the copy succeeds but tagging fails, the VM is left running and unowned; the error names it and gives the `ssh exe.dev tag` command to adopt it. Provider integrations are not copied either — attach those to `tag:herdr-exe-dev` yourself.
+
+The base is read at allocation and never afterwards, so refreshing it changes new VMs only.
+
+### Copying individual files
+
+An optional `homeFiles` array copies files you name onto each VM, to the same location under its home directory, every time an action reaches it:
 
 ```json
 {
@@ -46,6 +68,8 @@ A VM starts with whatever its image ships, so a coding agent there has none of y
 Every entry must be an absolute path inside your home directory, a regular file after following symlinks, and at most 1 MiB; directories are not copied. Content is written, not linked, so a path into a dotfile repository works. Copies are created with `umask 077` and refreshed on every start, which keeps an expiring OAuth token current.
 
 This is the one place the plugin sends local data other than Git history, and it sends exactly what you list, including credentials if you list a credential file. Nothing is copied by default. Anyone with access to the VM, and the provider itself, can read what you put there.
+
+The two settings compose: a base carries the bulk that rarely changes, and `homeFiles` carries the few things that expire or must not be baked into a disk image.
 
 VM host keys are trusted on first use and pinned in `HERDR_PLUGIN_STATE_DIR/known_hosts`, which no other SSH connection reads. A freshly created VM has no key you could have verified in advance, and the plugin never prompts, so its first connection accepts the key it is offered and every later one must match it exactly. Your own `~/.ssh/known_hosts` is untouched, and the `exe.dev` control plane is not covered: trust that host yourself, with plain `ssh exe.dev`, before the first allocation.
 

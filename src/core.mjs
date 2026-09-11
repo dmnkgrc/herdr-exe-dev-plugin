@@ -277,12 +277,20 @@ export function operatorConfig(configDir) {
     (!text(value.sshUser) || !USER.test(value.sshUser))
   )
     throw new Error("sshUser must be a safe SSH user name.");
+  if (
+    value.baseVm !== undefined &&
+    (!text(value.baseVm) || !NAME.test(value.baseVm))
+  )
+    throw new Error(
+      "baseVm must be the provider name of an existing VM to copy.",
+    );
   return {
     identityFile,
     cpu: value.cpu,
     memory: size(value.memory, "memory"),
     disk: size(value.disk, "disk"),
     sshUser: value.sshUser ?? "exedev",
+    ...(value.baseVm === undefined ? {} : { baseVm: value.baseVm }),
   };
 }
 export function homeFiles(configDir) {
@@ -774,18 +782,46 @@ export function allocate(stateDir, entry, execute = run) {
     );
   entry.phase = "creating";
   save(stateDir, entry);
-  execute(
-    "ssh",
-    providerArgs(entry, [
-      "new",
-      `--name=${entry.vm.name}`,
-      `--cpu=${entry.settings.cpu}`,
-      `--memory=${entry.settings.memory}`,
-      `--disk=${entry.settings.disk}`,
-      `--tag=${TAG}`,
-      "--json",
-    ]),
-  );
+  const spec = [
+    `--cpu=${entry.settings.cpu}`,
+    `--memory=${entry.settings.memory}`,
+    `--disk=${entry.settings.disk}`,
+  ];
+  if (entry.settings.baseVm) {
+    // The source tags are dropped rather than inherited: they belong to whoever
+    // maintains the base, and copying them would enlist this VM in their tooling.
+    execute(
+      "ssh",
+      providerArgs(entry, [
+        "cp",
+        entry.settings.baseVm,
+        entry.vm.name,
+        "--copy-tags=false",
+        ...spec,
+        "--json",
+      ]),
+    );
+    try {
+      execute(
+        "ssh",
+        providerArgs(entry, ["tag", entry.vm.name, TAG, "--json"]),
+      );
+    } catch (error) {
+      throw new Error(
+        `Copied VM ${entry.vm.name} carries no ownership tag, so no further operation will match it; tag it with "ssh exe.dev tag ${entry.vm.name} ${TAG}" and recover, or delete it on the provider: ${error.message}`,
+      );
+    }
+  } else
+    execute(
+      "ssh",
+      providerArgs(entry, [
+        "new",
+        `--name=${entry.vm.name}`,
+        ...spec,
+        `--tag=${TAG}`,
+        "--json",
+      ]),
+    );
   return bindCreatedVm(stateDir, entry, execute);
 }
 export function recoverCreation(stateDir, entry, execute = run) {
