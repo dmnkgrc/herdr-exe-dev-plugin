@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   allocate,
+  archiveMapping,
   assertSameSeed,
   attachMachine,
   bundleFile,
@@ -171,7 +172,13 @@ export function action(env = process.env) {
   )
     throw new Error(`Unknown action: ${id}`);
   const local = env.HERDR_EXE_DEV_MAPPING ? undefined : location(env);
-  const mapping = savedMapping(stateDir, env, local);
+  let mapping = savedMapping(stateDir, env, local);
+  // Deletion leaves a tombstone. Starting an agent for the worktree again means
+  // the operator wants a VM, so retire the record instead of refusing forever.
+  if (mapping?.phase === "deleted" && launches.has(id) && local) {
+    withLock(stateDir, mapping.id, () => archiveMapping(stateDir, mapping));
+    mapping = undefined;
+  }
   if (launches.has(id) && env.HERDR_EXE_DEV_PROVISION !== "1")
     return launchProvision(env, id, local, mapping);
   if (id === "delete") {

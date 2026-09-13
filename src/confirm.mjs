@@ -39,7 +39,14 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   try {
     console.log(JSON.stringify({ ok: true, ...(await confirm()) }));
   } catch (error) {
-    console.error(JSON.stringify({ ok: false, error: error.message }));
+    process.stderr.write(`\nexe.dev deletion failed: ${error.message}\n`);
     process.exitCode = 1;
+    // The pane closes on exit, so an unread refusal would look like a no-op.
+    if (stdin.isTTY) {
+      process.stderr.write("Press any key to close this pane.\n");
+      stdin.setRawMode(true);
+      await new Promise((resolve) => stdin.once("data", resolve));
+      process.exit(1);
+    }
   }
 }

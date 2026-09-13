@@ -233,6 +233,12 @@ export function load(stateDir, id, location) {
     throw new Error("Saved mapping does not belong to this worktree.");
   return entry;
 }
+export function archiveMapping(stateDir, entry) {
+  const file = mappingFile(stateDir, entry.id);
+  if (!regular(file, true)) return;
+  const stamp = new Date().toISOString().replace(/[:.]/g, "");
+  fs.renameSync(file, path.join(path.dirname(file), `deleted-${stamp}.json`));
+}
 export function save(stateDir, entry) {
   validateEntry(entry, entry.id);
   atomic(mappingFile(stateDir, entry.id), entry);

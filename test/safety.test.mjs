@@ -251,3 +251,36 @@ test("skill installation does not follow a directory symlink into the checkout",
   );
   assert.equal(fs.existsSync(path.join(f.source, "herdr")), false);
 });
+
+test("a deletion tombstone is retired so the worktree can allocate a new VM", (t) => {
+  const f = fixture(t);
+  assert.equal(f.provision().status, 0);
+  const first = f.mapping();
+  assert.equal(f.transport().vms.length, 1);
+  const mappings = path.join(f.directory, "state", "mappings", first.id);
+  fs.writeFileSync(
+    path.join(mappings, "entry.json"),
+    JSON.stringify({ ...first, phase: "deleted" }),
+  );
+  // The fixture shares one remote home; a replacement VM starts without a checkout.
+  fs.rmSync(path.join(f.directory, "remote-home", "project"), {
+    recursive: true,
+    force: true,
+  });
+  const retry = f.provision();
+  assert.doesNotMatch(retry.stderr, /tombstone/);
+  const second = f.mapping();
+  assert.equal(second.id, first.id);
+  assert.notEqual(second.vm.name, first.vm.name);
+  assert.notEqual(second.phase, "deleted");
+  assert.equal(f.transport().vms.length, 2);
+  const archived = fs
+    .readdirSync(mappings)
+    .filter((name) => name.startsWith("deleted-"));
+  assert.equal(archived.length, 1);
+  assert.equal(
+    JSON.parse(fs.readFileSync(path.join(mappings, archived[0]), "utf8")).vm
+      .name,
+    first.vm.name,
+  );
+});

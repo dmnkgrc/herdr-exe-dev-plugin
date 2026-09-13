@@ -190,7 +190,7 @@ Mappings use the worktree's Git administrative directory and common directory, n
 
 For manual recovery outside an action context, invoke `src/action.mjs` with `HERDR_PLUGIN_STATE_DIR`, `HERDR_PLUGIN_CONFIG_DIR`, `HERDR_PLUGIN_ACTION_ID` and `HERDR_EXE_DEV_MAPPING` set explicitly. Prefer `status` first. Do not erase a mapping to retry allocation.
 
-Corrupt state, missing saved bindings, unknown routes and uncertain seeding are retained rather than recreated or overwritten. An interrupted local process may leave a lock file: verify that the operation and remote setup have stopped before removing that specific stale lock. Deletion leaves a tombstone; archive it deliberately before creating another VM for the same worktree.
+Corrupt state, missing saved bindings, unknown routes and uncertain seeding are retained rather than recreated or overwritten. An interrupted local process may leave a lock file: verify that the operation and remote setup have stopped before removing that specific stale lock. Deletion leaves a tombstone. Starting an agent for that worktree again retires the tombstone to `deleted-<timestamp>.json` beside the mapping and allocates a new VM; every other action still refuses to act on it.
 
 Agents share the remote checkout. Concurrent writers need separate remote Git worktrees; tabs alone do not isolate files. Use native Herdr for related splits and keep one owner for shared services and browser work. The release-matched Herdr skill is installed only when absent or identical.
 
