@@ -25,16 +25,18 @@ export async function confirm(
     terminal: Boolean(input.isTTY),
   });
   // readline redraws its line on a terminal, erasing any prompt written before
-  // it, so the name to type has to be the prompt readline owns.
-  const typed = await reader.question(`Type ${displayed.vm.name} to delete: `);
+  // it, so the question has to be the prompt readline owns.
+  const typed = await reader.question(`Delete ${displayed.vm.name}? [y/N] `);
   reader.close();
+  if (!/^y(es)?$/i.test(typed.trim()))
+    throw new Error("Deletion cancelled; the VM is untouched.");
   return withLock(stateDir, id, () => {
     const current = load(stateDir, id);
     if (JSON.stringify(current) !== JSON.stringify(displayed))
       throw new Error(
         "Mapping changed during confirmation; reopen the deletion pane.",
       );
-    return deleteVm(stateDir, current, typed);
+    return deleteVm(stateDir, current, current.vm.name);
   });
 }
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

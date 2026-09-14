@@ -1301,9 +1301,60 @@ export function openPane(stateDir, entry, argvValue, title, execute = run) {
 export function inspectionScript(entry) {
   const fallback = integrationUrl(entry.seed.origin);
   const origin = entry.seed.origin
-    ? `url=$(git remote get-url origin)\ntest "$url" = ${quote(entry.seed.origin)}${fallback ? ` || test "$url" = ${quote(fallback)}` : ""}\ntimeout 45 git fetch --prune --no-tags origin '+refs/heads/*:refs/remotes/origin/*'\n`
-    : 'test -z "$(git remote)" || exit 1\necho "No origin is configured; cannot prove remote work is published." >&2\nexit 1\n';
-  return `set -eu\nexec 9>"$HOME/.herdr-exe-setup.lock"\nflock -n 9\nrepo=${quote(REMOTE_ROOT)}\ncd "$repo"\ntest "$(git rev-parse --show-toplevel)" = "$repo"\n${origin}test -z "$(git stash list)"\ntest "$(git worktree list --porcelain | grep -c '^worktree ')" = 1\ntest -z "$(git status --porcelain --untracked-files=all)"\ntest -n "$(git symbolic-ref --quiet HEAD)"\ntest -z "$(git rev-list --branches --tags HEAD --not --remotes=origin)"\nlocal_tags=$(git for-each-ref --format='%(objectname) %(refname)' refs/tags)\nif test -n "$local_tags"; then\n  remote_tags=$(timeout 30 git ls-remote --tags --refs origin)\n  while read -r object ref; do\n    printf '%s\\n' "$remote_tags" | grep -Fxq "$(printf '%s\\t%s' "$object" "$ref")"\n  done <<< "$local_tags"\nfi`;
+    ? `url=$(git remote get-url origin)
+test "$url" = ${quote(entry.seed.origin)}${fallback ? ` || test "$url" = ${quote(fallback)}` : ""} || { printf '%s\\n' "The VM's origin is $url, not the recorded ${entry.seed.origin}; deletion cannot prove its work is published." >&2; exit 1; }
+timeout 45 git fetch --quiet --prune --no-tags origin '+refs/heads/*:refs/remotes/origin/*' || { printf '%s\\n' "Could not reach origin from the VM, so deletion cannot prove its work is published." >&2; exit 1; }
+`
+    : `{ printf '%s\\n' "The VM has no origin, so deletion cannot prove its work is published." >&2; exit 1; }
+`;
+  return `set -eu
+fail() { printf '%s\n' "$1" >&2; exit 1; }
+exec 9>"$HOME/.herdr-exe-setup.lock"
+flock -n 9 || { printf '%s\\n' "Remote setup still holds its lock on the VM; wait for it to finish, then delete again." >&2; exit 1; }
+repo=${quote(REMOTE_ROOT)}
+cd "$repo" || { printf '%s\\n' "The VM has no checkout at $repo." >&2; exit 1; }
+test "$(git rev-parse --show-toplevel)" = "$repo" || { printf '%s\\n' "The checkout at $repo is not the root of the VM's Git repository." >&2; exit 1; }
+${origin}stashed=$(git stash list | wc -l | tr -d ' ')
+test "$stashed" = 0 || { printf '%s\\n' "The VM has $stashed stashed change(s) that deletion would destroy. Drop or publish them, then delete again." >&2; exit 1; }
+worktrees=$(git worktree list --porcelain | grep -c '^worktree ' || true)
+test "$worktrees" = 1 || { printf '%s\\n' "The VM has $worktrees Git worktrees and deletion needs exactly one. Remove the extra ones, then delete again." >&2; exit 1; }
+changed=$(git status --porcelain --untracked-files=all | wc -l | tr -d ' ')
+test "$changed" = 0 || { printf '%s\\n' "The VM has $changed uncommitted or untracked file(s) that deletion would destroy. Commit and push them, then delete again." >&2; exit 1; }
+test -n "$(git symbolic-ref --quiet HEAD)" || { printf '%s\\n' "The VM's checkout is on a detached HEAD, so deletion cannot prove its commits are published." >&2; exit 1; }
+ahead=$(git rev-list --branches --tags HEAD --not --remotes=origin | wc -l | tr -d ' ')
+if test "$ahead" != 0; then
+  stray=$(git rev-list --branches --tags --not --remotes=origin HEAD | wc -l | tr -d ' ')
+  test "$stray" = 0 || { printf '%s\\n' "The VM has $stray commit(s) on branches or tags other than the checked-out one that origin does not have, which deletion would destroy. Push them, then delete again." >&2; exit 1; }
+  default=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD || true)
+  if test -z "$default"; then
+    for candidate in origin/main origin/master; do
+      if git rev-parse --verify --quiet "$candidate" >/dev/null; then default=$candidate; break; fi
+    done
+  fi
+  test -n "$default" || { printf '%s\\n' "The VM has $ahead commit(s) that origin does not have and origin has no default branch to compare them against. Push them, then delete again." >&2; exit 1; }
+  # A squash merge rewrites the branch into one new commit, so its own commits
+  # never reach origin. Compare the branch as a single patch instead.
+  base=$(git merge-base HEAD "$default")
+  probe=$(git commit-tree "$(git rev-parse 'HEAD^{tree}')" -p "$base" -m squash-probe)
+  case "$(git cherry "$default" "$probe")" in
+    -*) : ;;
+    *) { printf '%s\\n' "The VM has $ahead commit(s) that origin does not have, and their changes are not in $default either, so deletion would destroy them. Push or merge them, then delete again." >&2; exit 1; } ;;
+  esac
+fi
+local_tags=$(git for-each-ref --format='%(objectname) %(refname)' refs/tags)
+if test -n "$local_tags"; then
+  remote_tags=$(timeout 30 git ls-remote --tags --refs origin) || { printf '%s\\n' "Could not list origin's tags from the VM, so deletion cannot prove its tags are published." >&2; exit 1; }
+  while read -r object ref; do
+    printf '%s\n' "$remote_tags" | grep -Fxq "$(printf '%s\t%s' "$object" "$ref")" || { printf '%s\\n' "The VM has $ref, which origin does not have. Push it, then delete again." >&2; exit 1; }
+  done <<< "$local_tags"
+fi`;
+}
+
+function busy(info) {
+  const names = Array.isArray(info?.foreground_processes)
+    ? info.foreground_processes.map((process) => process?.name).filter(text)
+    : [];
+  return names.length ? ` (running ${names.join(", ")})` : "";
 }
 function activePanes(entry, execute) {
   for (const workspace of workspaceList(entry, execute)) {
@@ -1313,7 +1364,7 @@ function activePanes(entry, execute) {
       if (!text(pane.pane_id)) throw new Error("Invalid live pane identity.");
       if (pane.agent)
         throw new Error(
-          "A live Herdr agent is present; close it through native Herdr before deletion.",
+          `A live ${text(pane.agent) ? pane.agent : "Herdr"} agent is running on ${entry.vm.name}, in pane ${pane.pane_id} of workspace ${workspace.workspace_id}${text(workspace.label) ? ` (${workspace.label})` : ""}. Deleting now would kill its work. Open that pane, stop the agent, then delete again.`,
         );
       const info = result(
         herdr(entry, ["pane", "process-info", "--pane", pane.pane_id], execute),
@@ -1333,7 +1384,7 @@ function activePanes(entry, execute) {
         )
       )
         throw new Error(
-          "Cannot prove every live pane is an idle shell; stop foreground work before deletion.",
+          `Pane ${pane.pane_id} of workspace ${workspace.workspace_id} on ${entry.vm.name} is not an idle shell${busy(info)}. Deletion needs every pane idle, so stop that work, then delete again.`,
         );
     }
   }
@@ -1358,7 +1409,12 @@ export function deleteVm(stateDir, entry, typedName, transport = {}) {
   // scan below still refuses an agent in any workspace.
   machineProfile(entry, execute);
   activePanes(entry, execute);
-  remote(entry, inspectionScript(entry), { timeout: 120000 }, execute);
+  try {
+    remote(entry, inspectionScript(entry), { timeout: 120000 }, execute);
+  } catch (error) {
+    // The script reports its own refusal; an "ssh failed" prefix only buries it.
+    throw new Error(error.message.replace(/^ssh failed: /, ""));
+  }
   activePanes(entry, execute);
   validateExisting(entry, execute);
   entry.phase = "deleting";

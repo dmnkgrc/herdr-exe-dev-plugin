@@ -185,12 +185,12 @@ test("typed confirmation is invalidated when its saved mapping changes", async (
     submitted = false;
   child.stderr.on("data", (chunk) => (stderr += chunk));
   child.stdout.on("data", (chunk) => {
-    if (submitted || !chunk.toString().includes(`Type ${entry.vm.name} to delete:`))
+    if (submitted || !chunk.toString().includes(`Delete ${entry.vm.name}? [y/N]`))
       return;
     submitted = true;
     entry.settings.cpu += 1;
     save(f.env.HERDR_PLUGIN_STATE_DIR, entry);
-    child.stdin.end(`${entry.vm.name}\n`);
+    child.stdin.end("y\n");
   });
   const code = await new Promise((resolve) => child.on("close", resolve));
   assert.notEqual(code, 0);

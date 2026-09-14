@@ -363,7 +363,7 @@ test("a VM whose workspace the operator closed can still be deleted", (t) => {
     [path.join(ROOT, "src", "confirm.mjs")],
     {
       env: { ...f.env, HERDR_EXE_DEV_MAPPING: mapped.id },
-      input: `${mapped.vm.name}\n`,
+      input: "y\n",
       encoding: "utf8",
       timeout: 30000,
     },
@@ -382,7 +382,7 @@ test("confirmed deletion rejects unpublished work and active processes, and reco
   const remove = () =>
     spawnSync(process.execPath, [path.join(ROOT, "src", "confirm.mjs")], {
       env: { ...f.env, HERDR_EXE_DEV_MAPPING: mapped.id },
-      input: `${mapped.vm.name}\n`,
+      input: "y\n",
       encoding: "utf8",
       timeout: 30000,
     });
