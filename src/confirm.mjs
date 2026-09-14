@@ -8,6 +8,7 @@ export async function confirm(
   env = process.env,
   input = stdin,
   output = stdout,
+  report = process.stderr,
 ) {
   const stateDir = env.HERDR_PLUGIN_STATE_DIR;
   const id = env.HERDR_EXE_DEV_MAPPING;
@@ -30,13 +31,27 @@ export async function confirm(
   reader.close();
   if (!/^y(es)?$/i.test(typed.trim()))
     throw new Error("Deletion cancelled; the VM is untouched.");
+  // Deletion spends a minute in remote checks, so report each stage rather than
+  // leaving the pane silent between the answer and the result.
+  const started = Date.now();
+  const progress = (message) => {
+    const seconds = Math.round((Date.now() - started) / 1000);
+    const clock = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+    report.write(`[${clock}] ${message}\n`);
+  };
   return withLock(stateDir, id, () => {
     const current = load(stateDir, id);
     if (JSON.stringify(current) !== JSON.stringify(displayed))
       throw new Error(
         "Mapping changed during confirmation; reopen the deletion pane.",
       );
-    return deleteVm(stateDir, current, current.vm.name);
+    const deleted = deleteVm(stateDir, current, current.vm.name, { progress });
+    progress(
+      deleted.cleanupError
+        ? `Destroyed ${current.vm.name}, but local cleanup needs attention: ${deleted.cleanupError}`
+        : `Destroyed ${current.vm.name} and cleaned up its machine profile and route.`,
+    );
+    return deleted;
   });
 }
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

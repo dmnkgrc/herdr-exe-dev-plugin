@@ -1400,36 +1400,48 @@ export function cleanupRoute(stateDir, entry) {
 }
 export function deleteVm(stateDir, entry, typedName, transport = {}) {
   const execute = transport.run ?? run;
+  const progress = transport.progress ?? (() => {});
   if (typedName !== entry.vm.name)
     throw new Error("Typed VM name does not match; deletion cancelled.");
+  progress("Confirming the VM is still the one this worktree owns.");
   validateExisting(entry, execute);
   // Only machine ownership is required, not the saved workspace and pane: a
   // closed workspace is less at risk, not more, and demanding it would leave a
   // VM whose workspace the operator closed permanently undeletable. The live
   // scan below still refuses an agent in any workspace.
   machineProfile(entry, execute);
+  progress("Checking every pane on the VM is an idle shell.");
   activePanes(entry, execute);
+  progress("Fetching origin to prove the VM's Git work is published.");
   try {
     remote(entry, inspectionScript(entry), { timeout: 120000 }, execute);
   } catch (error) {
     // The script reports its own refusal; an "ssh failed" prefix only buries it.
     throw new Error(error.message.replace(/^ssh failed: /, ""));
   }
+  progress("Re-checking panes and ownership before destroying anything.");
   activePanes(entry, execute);
   validateExisting(entry, execute);
   entry.phase = "deleting";
   save(stateDir, entry);
+  progress(`Asking the provider to destroy ${entry.vm.name}.`);
   try {
     execute("ssh", providerArgs(entry, ["rm", entry.vm.name, "--json"]));
   } catch (error) {
     entry.error = error.message;
     save(stateDir, entry);
   }
-  return reconcileDeletion(stateDir, entry, execute);
+  return reconcileDeletion(stateDir, entry, execute, progress);
 }
-export function reconcileDeletion(stateDir, entry, execute = run) {
+export function reconcileDeletion(
+  stateDir,
+  entry,
+  execute = run,
+  progress = () => {},
+) {
   if (!["deleting", "deleted"].includes(entry.phase))
     throw new Error("No recorded deletion is pending.");
+  progress("Confirming the provider no longer lists the VM.");
   if (providerList(entry, execute).some((vm) => vm.vm_name === entry.vm.name))
     throw new Error(
       "VM name is still present; deletion is unconfirmed. No additional delete was issued.",
@@ -1437,6 +1449,7 @@ export function reconcileDeletion(stateDir, entry, execute = run) {
   entry.phase = "deleted";
   delete entry.error;
   save(stateDir, entry);
+  progress("Removing the Herdr machine profile and SSH route.");
   try {
     const profiles = machineProfiles(entry, execute);
     const profile = profiles.find((value) => value.id === entry.machineId);
