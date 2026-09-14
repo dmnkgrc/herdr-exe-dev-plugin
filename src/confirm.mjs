@@ -45,6 +45,8 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     if (stdin.isTTY) {
       process.stderr.write("Press any key to close this pane.\n");
       stdin.setRawMode(true);
+      // readline.close() paused stdin, so a new data listener will not resume it.
+      stdin.resume();
       await new Promise((resolve) => stdin.once("data", resolve));
       process.exit(1);
     }
