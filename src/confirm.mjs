@@ -17,14 +17,16 @@ export async function confirm(
     );
   const displayed = load(stateDir, id);
   output.write(
-    `Deletion permanently destroys all VM data, including ignored files and databases.\nGit checks cannot back up non-Git data.\nType ${displayed.vm.name} to delete: `,
+    `Deletion permanently destroys all VM data, including ignored files and databases.\nGit checks cannot back up non-Git data.\n`,
   );
   const reader = createInterface({
     input,
     output,
     terminal: Boolean(input.isTTY),
   });
-  const typed = await reader.question("");
+  // readline redraws its line on a terminal, erasing any prompt written before
+  // it, so the name to type has to be the prompt readline owns.
+  const typed = await reader.question(`Type ${displayed.vm.name} to delete: `);
   reader.close();
   return withLock(stateDir, id, () => {
     const current = load(stateDir, id);

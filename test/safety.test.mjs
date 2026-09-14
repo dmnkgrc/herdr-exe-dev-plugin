@@ -185,7 +185,8 @@ test("typed confirmation is invalidated when its saved mapping changes", async (
     submitted = false;
   child.stderr.on("data", (chunk) => (stderr += chunk));
   child.stdout.on("data", (chunk) => {
-    if (submitted || !chunk.toString().includes("to delete:")) return;
+    if (submitted || !chunk.toString().includes(`Type ${entry.vm.name} to delete:`))
+      return;
     submitted = true;
     entry.settings.cpu += 1;
     save(f.env.HERDR_PLUGIN_STATE_DIR, entry);
