@@ -16,6 +16,7 @@ import {
   homeFiles,
   initializeRoute,
   installSkill,
+  listMappings,
   load,
   makeEntry,
   mappingId,
@@ -55,35 +56,58 @@ function location(env) {
       : (value.focused_pane_cwd ??
         value.workspace_cwd ??
         env.HERDR_EXE_DEV_CWD);
-  if (!cwd || !path.isAbsolute(cwd))
-    throw new Error(
-      "Focus a Git worktree, or select HERDR_EXE_DEV_MAPPING explicitly.",
+  if (!cwd || !path.isAbsolute(cwd) || !fs.existsSync(cwd)) return undefined;
+  try {
+    const root = fs.realpathSync(
+      run("git", ["-C", cwd, "rev-parse", "--show-toplevel"]),
     );
-  const root = fs.realpathSync(
-    run("git", ["-C", cwd, "rev-parse", "--show-toplevel"]),
-  );
-  return {
-    root,
-    gitDir: fs.realpathSync(
-      run("git", ["-C", root, "rev-parse", "--absolute-git-dir"]),
-    ),
-    commonDir: fs.realpathSync(
-      path.resolve(
-        root,
-        run("git", ["-C", root, "rev-parse", "--git-common-dir"]),
+    return {
+      root,
+      gitDir: fs.realpathSync(
+        run("git", ["-C", root, "rev-parse", "--absolute-git-dir"]),
       ),
-    ),
-  };
+      commonDir: fs.realpathSync(
+        path.resolve(
+          root,
+          run("git", ["-C", root, "rev-parse", "--git-common-dir"]),
+        ),
+      ),
+    };
+  } catch {
+    return undefined;
+  }
 }
 function savedMapping(stateDir, env, local) {
   if (env.HERDR_EXE_DEV_MAPPING)
     return load(stateDir, env.HERDR_EXE_DEV_MAPPING);
-  try {
-    return load(stateDir, mappingId(local.gitDir, local.commonDir), local);
-  } catch (error) {
-    if (!(error instanceof MissingMappingError)) throw error;
-    return undefined;
+  if (local) {
+    try {
+      return load(stateDir, mappingId(local.gitDir, local.commonDir), local);
+    } catch (error) {
+      if (!(error instanceof MissingMappingError)) throw error;
+    }
   }
+  return undefined;
+}
+function mappingFromWorkspace(stateDir, env) {
+  const value = context(env);
+  const workspaceId = value.workspace_id || env.HERDR_WORKSPACE_ID;
+  const label = value.workspace_label;
+  if (!workspaceId && !label) return undefined;
+  const matches = [];
+  for (const entry of listMappings(stateDir)) {
+    if (
+      (workspaceId && entry.workspaceId === workspaceId) ||
+      (label && label === `exe.dev ${entry.vm.name}`)
+    )
+      matches.push(entry);
+  }
+  const ids = new Set(matches.map((entry) => entry.id));
+  if (ids.size > 1)
+    throw new Error(
+      "Remote workspace matches multiple VM mappings; set HERDR_EXE_DEV_MAPPING.",
+    );
+  return matches[0];
 }
 function launchProvision(env, id, local, mapping) {
   const args = [
@@ -102,6 +126,27 @@ function launchProvision(env, id, local, mapping) {
   if (mapping) args.push("--env", `HERDR_EXE_DEV_MAPPING=${mapping.id}`);
   run(env.HERDR_BIN_PATH ?? "herdr", args);
   return { action: id, phase: "preparation-submitted", vm: mapping?.vm.name };
+}
+function launchConfirm(env, mapping) {
+  const args = [
+    "plugin",
+    "pane",
+    "open",
+    "--plugin",
+    "exe-dev",
+    "--entrypoint",
+    "confirm",
+    "--placement",
+    "overlay",
+    "--focus",
+  ];
+  if (mapping) args.push("--env", `HERDR_EXE_DEV_MAPPING=${mapping.id}`);
+  run(env.HERDR_BIN_PATH ?? "herdr", args);
+  return {
+    action: "delete",
+    phase: "confirmation-opened",
+    vm: mapping?.vm.name,
+  };
 }
 function prepareAttachment(stateDir, entry, progress) {
   progress("Preparing native Herdr and its skill.");
@@ -172,32 +217,22 @@ export function action(env = process.env) {
   )
     throw new Error(`Unknown action: ${id}`);
   const local = env.HERDR_EXE_DEV_MAPPING ? undefined : location(env);
-  let mapping = savedMapping(stateDir, env, local);
+  let mapping =
+    savedMapping(stateDir, env, local) ?? mappingFromWorkspace(stateDir, env);
   // Deletion leaves a tombstone. Starting an agent for the worktree again means
   // the operator wants a VM, so retire the record instead of refusing forever.
   if (mapping?.phase === "deleted" && launches.has(id) && local) {
     withLock(stateDir, mapping.id, () => archiveMapping(stateDir, mapping));
     mapping = undefined;
   }
-  if (launches.has(id) && env.HERDR_EXE_DEV_PROVISION !== "1")
+  if (launches.has(id) && env.HERDR_EXE_DEV_PROVISION !== "1") {
+    if (!local)
+      throw new Error(
+        "Focus a Git worktree, or select HERDR_EXE_DEV_MAPPING explicitly.",
+      );
     return launchProvision(env, id, local, mapping);
-  if (id === "delete") {
-    if (!mapping)
-      throw new MissingMappingError("No VM mapping exists for this worktree.");
-    run(env.HERDR_BIN_PATH ?? "herdr", [
-      "plugin",
-      "pane",
-      "open",
-      "--plugin",
-      "exe-dev",
-      "--entrypoint",
-      "confirm",
-      "--env",
-      `HERDR_EXE_DEV_MAPPING=${mapping.id}`,
-      "--focus",
-    ]);
-    return { action: id, phase: "confirmation-opened", vm: mapping.vm.name };
   }
+  if (id === "delete") return launchConfirm(env, mapping);
   const started = Date.now();
   const progress = (message) => {
     if (env.HERDR_EXE_DEV_PROVISION !== "1") return;
@@ -205,9 +240,18 @@ export function action(env = process.env) {
     const clock = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
     process.stderr.write(`[${clock}] ${message}\n`);
   };
+  if (!mapping && !local)
+    throw new Error(
+      "Focus a Git worktree, or select HERDR_EXE_DEV_MAPPING explicitly.",
+    );
   const target = mapping?.id ?? mappingId(local.gitDir, local.commonDir);
   return withLock(stateDir, target, () => {
-    let entry = savedMapping(stateDir, env, local);
+    let entry;
+    try {
+      entry = load(stateDir, target, local);
+    } catch (error) {
+      if (!(error instanceof MissingMappingError)) throw error;
+    }
     if (!entry) {
       if (!launches.has(id))
         throw new MissingMappingError(

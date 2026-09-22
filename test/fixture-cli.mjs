@@ -195,8 +195,21 @@ if (mode === "ssh") {
     if (args[0] !== "--session" || args[1] !== "exe-dev")
       throw new Error("Missing explicit remote session.");
     args = args.slice(2);
-    if (args.join(" ") === "workspace list")
+    if (args.join(" ") === "workspace list") {
+      if (control.serverNotRunning) {
+        console.error(
+          JSON.stringify({
+            id: "cli:workspace:list",
+            error: {
+              code: "server_not_running",
+              message: "no herdr server is running",
+            },
+          }),
+        );
+        process.exit(1);
+      }
       reply({ type: "workspace_list", workspaces: state.workspaces });
+    }
     else if (args[0] === "workspace" && args[1] === "create") {
       if (option("--cwd") !== remoteRoot)
         throw new Error("Workspace cwd was not the fixture checkout.");

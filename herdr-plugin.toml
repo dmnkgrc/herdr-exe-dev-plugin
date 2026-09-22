@@ -32,5 +32,5 @@ command = ["node", "src/provision.mjs"]
 [[panes]]
 id = "confirm"
 title = "Confirm exe.dev deletion"
-placement = "split"
+placement = "overlay"
 command = ["node", "src/confirm.mjs"]

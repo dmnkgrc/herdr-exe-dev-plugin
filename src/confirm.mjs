@@ -12,10 +12,12 @@ export async function confirm(
 ) {
   const stateDir = env.HERDR_PLUGIN_STATE_DIR;
   const id = env.HERDR_EXE_DEV_MAPPING;
-  if (!stateDir || !id)
+  if (!stateDir)
     throw new Error(
       "Open this confirmation pane through the exe.dev Delete action.",
     );
+  if (!id)
+    throw new Error("No VM mapping exists for this workspace.");
   const displayed = load(stateDir, id);
   output.write(
     `Deletion permanently destroys all VM data, including ignored files and databases.\nGit checks cannot back up non-Git data.\n`,

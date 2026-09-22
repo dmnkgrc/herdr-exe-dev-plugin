@@ -233,6 +233,26 @@ export function load(stateDir, id, location) {
     throw new Error("Saved mapping does not belong to this worktree.");
   return entry;
 }
+export function listMappings(stateDir) {
+  const directory = stateDirectory(stateDir, "mappings");
+  let names;
+  try {
+    names = fs.readdirSync(directory);
+  } catch (error) {
+    if (error.code === "ENOENT") return [];
+    throw error;
+  }
+  const entries = [];
+  for (const id of names) {
+    if (!ID.test(id)) continue;
+    try {
+      entries.push(load(stateDir, id));
+    } catch {
+      continue;
+    }
+  }
+  return entries;
+}
 export function archiveMapping(stateDir, entry) {
   const file = mappingFile(stateDir, entry.id);
   if (!regular(file, true)) return;
@@ -802,14 +822,17 @@ function routeFromVm(entry, vm) {
     );
   return { host, user };
 }
-export function ownedVm(entry, vms = providerList(entry)) {
-  const matches = vms.filter(
+function taggedMatches(entry, vms) {
+  return vms.filter(
     (vm) =>
       vm.vm_name === entry.vm.name &&
       vm.created_at === entry.vm.createdAt &&
       Array.isArray(vm.tags) &&
       vm.tags.includes(TAG),
   );
+}
+export function ownedVm(entry, vms = providerList(entry)) {
+  const matches = taggedMatches(entry, vms);
   if (matches.length !== 1)
     throw new Error(
       "Recorded VM identity is missing or ambiguous; refusing this operation.",
@@ -1357,7 +1380,15 @@ function busy(info) {
   return names.length ? ` (running ${names.join(", ")})` : "";
 }
 function activePanes(entry, execute) {
-  for (const workspace of workspaceList(entry, execute)) {
+  let workspaces;
+  try {
+    workspaces = workspaceList(entry, execute);
+  } catch (error) {
+    // No Herdr server means no Herdr panes or agents to kill.
+    if (error.message.includes("server_not_running")) return;
+    throw error;
+  }
+  for (const workspace of workspaces) {
     if (!text(workspace.workspace_id))
       throw new Error("Invalid live workspace identity.");
     for (const pane of paneList(entry, workspace.workspace_id, execute)) {
@@ -1404,6 +1435,19 @@ export function deleteVm(stateDir, entry, typedName, transport = {}) {
   if (typedName !== entry.vm.name)
     throw new Error("Typed VM name does not match; deletion cancelled.");
   progress("Confirming the VM is still the one this worktree owns.");
+  const listed = taggedMatches(entry, providerList(entry, execute));
+  if (listed.length > 1)
+    throw new Error(
+      "Recorded VM identity is missing or ambiguous; refusing this operation.",
+    );
+  if (listed.length === 0) {
+    progress(
+      "The provider no longer lists this VM; cleaning up the local machine profile.",
+    );
+    entry.phase = "deleting";
+    save(stateDir, entry);
+    return reconcileDeletion(stateDir, entry, execute, progress);
+  }
   validateExisting(entry, execute);
   // Only machine ownership is required, not the saved workspace and pane: a
   // closed workspace is less at risk, not more, and demanding it would leave a
@@ -1412,16 +1456,18 @@ export function deleteVm(stateDir, entry, typedName, transport = {}) {
   machineProfile(entry, execute);
   progress("Checking every pane on the VM is an idle shell.");
   activePanes(entry, execute);
-  progress("Fetching origin to prove the VM's Git work is published.");
-  try {
-    remote(entry, inspectionScript(entry), { timeout: 120000 }, execute);
-  } catch (error) {
-    // The script reports its own refusal; an "ssh failed" prefix only buries it.
-    throw new Error(error.message.replace(/^ssh failed: /, ""));
+  if (entry.seeded) {
+    progress("Fetching origin to prove the VM's Git work is published.");
+    try {
+      remote(entry, inspectionScript(entry), { timeout: 120000 }, execute);
+    } catch (error) {
+      // The script reports its own refusal; an "ssh failed" prefix only buries it.
+      throw new Error(error.message.replace(/^ssh failed: /, ""));
+    }
+    progress("Re-checking panes and ownership before destroying anything.");
+    activePanes(entry, execute);
+    validateExisting(entry, execute);
   }
-  progress("Re-checking panes and ownership before destroying anything.");
-  activePanes(entry, execute);
-  validateExisting(entry, execute);
   entry.phase = "deleting";
   save(stateDir, entry);
   progress(`Asking the provider to destroy ${entry.vm.name}.`);

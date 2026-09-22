@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
-import { quote, ROOT } from "../src/core.mjs";
+import { quote, REMOTE_ROOT, ROOT, save } from "../src/core.mjs";
 import { fixture } from "./fixture.mjs";
 
 function successful(result) {
@@ -346,6 +346,90 @@ test("lost workspace creation is reconciled without duplicating the workspace or
   assert.equal(allocations(f), 1);
 });
 
+function confirmPane(f) {
+  return f
+    .calls()
+    .findLast(
+      (call) => call.mode === "local-herdr" && call.args.includes("confirm"),
+    );
+}
+
+test("delete opens a confirmation overlay even when this workspace has no mapping", (t) => {
+  const f = fixture(t);
+  const result = successful(f.invoke("delete"));
+  assert.equal(result.phase, "confirmation-opened");
+  const opened = confirmPane(f);
+  assert.ok(opened);
+  assert.equal(opened.args[opened.args.indexOf("--placement") + 1], "overlay");
+});
+
+test("delete from a remote VM workspace confirms the mapped machine", (t) => {
+  const f = fixture(t);
+  successful(f.provision());
+  const mapped = f.mapping();
+  const result = successful(
+    f.invoke("delete", {
+      HERDR_PLUGIN_CONTEXT_JSON: JSON.stringify({
+        workspace_cwd: REMOTE_ROOT,
+        focused_pane_cwd: REMOTE_ROOT,
+        workspace_id: mapped.workspaceId,
+        workspace_label: `exe.dev ${mapped.vm.name}`,
+      }),
+    }),
+  );
+  assert.equal(result.phase, "confirmation-opened");
+  assert.equal(result.vm, mapped.vm.name);
+  assert.ok(
+    confirmPane(f).args.includes(`HERDR_EXE_DEV_MAPPING=${mapped.id}`),
+  );
+});
+
+test("start-agent still requires a local Git worktree", (t) => {
+  const f = fixture(t);
+  const failed = f.invoke("start-agent", {
+    HERDR_PLUGIN_CONTEXT_JSON: JSON.stringify({
+      workspace_cwd: REMOTE_ROOT,
+      focused_pane_cwd: REMOTE_ROOT,
+    }),
+  });
+  assert.notEqual(failed.status, 0);
+  assert.match(failed.stderr, /Git worktree/);
+});
+
+test("reconnect from a remote VM workspace reuses the mapping", (t) => {
+  const f = fixture(t);
+  successful(f.provision());
+  const mapped = f.mapping();
+  const result = successful(
+    f.invoke("reconnect", {
+      HERDR_PLUGIN_CONTEXT_JSON: JSON.stringify({
+        workspace_cwd: REMOTE_ROOT,
+        focused_pane_cwd: REMOTE_ROOT,
+        workspace_id: mapped.workspaceId,
+      }),
+    }),
+  );
+  assert.equal(result.phase, "workspace-focused");
+  assert.equal(result.vm, mapped.vm.name);
+  assert.equal(allocations(f), 1);
+});
+
+test("confirmation pane reports a missing mapping instead of exiting immediately", (t) => {
+  const f = fixture(t);
+  const missing = spawnSync(
+    process.execPath,
+    [path.join(ROOT, "src", "confirm.mjs")],
+    {
+      env: { ...f.env },
+      input: "y\n",
+      encoding: "utf8",
+      timeout: 30000,
+    },
+  );
+  assert.notEqual(missing.status, 0);
+  assert.match(missing.stderr, /No VM mapping exists for this workspace/);
+});
+
 test("a VM whose workspace the operator closed can still be deleted", (t) => {
   const f = fixture(t);
   successful(f.provision());
@@ -372,6 +456,83 @@ test("a VM whose workspace the operator closed can still be deleted", (t) => {
   assert.equal(f.mapping().phase, "deleted");
   assert.equal(f.transport().vms.length, 0);
   assert.equal(f.transport().machines.length, 0);
+});
+
+test("a VM already gone from the provider can still be deleted", (t) => {
+  const f = fixture(t);
+  successful(f.provision());
+  const mapped = f.mapping();
+  const gone = f.transport();
+  gone.vms = [];
+  fs.writeFileSync(
+    path.join(f.directory, "transport.json"),
+    JSON.stringify(gone),
+  );
+  const removed = spawnSync(
+    process.execPath,
+    [path.join(ROOT, "src", "confirm.mjs")],
+    {
+      env: { ...f.env, HERDR_EXE_DEV_MAPPING: mapped.id },
+      input: "y\n",
+      encoding: "utf8",
+      timeout: 30000,
+    },
+  );
+  assert.equal(removed.status, 0, `${removed.stdout}\n${removed.stderr}`);
+  assert.equal(f.mapping().phase, "deleted");
+  assert.equal(f.transport().machines.length, 0);
+  assert.equal(
+    f.calls().filter((call) => call.mode === "ssh" && call.args.includes("rm"))
+      .length,
+    0,
+  );
+});
+
+test("deletion continues when the remote Herdr server is not running", (t) => {
+  const f = fixture(t);
+  successful(f.provision());
+  f.control({ serverNotRunning: true });
+  const mapped = f.mapping();
+  const removed = spawnSync(
+    process.execPath,
+    [path.join(ROOT, "src", "confirm.mjs")],
+    {
+      env: { ...f.env, HERDR_EXE_DEV_MAPPING: mapped.id },
+      input: "y\n",
+      encoding: "utf8",
+      timeout: 30000,
+    },
+  );
+  assert.equal(removed.status, 0, `${removed.stdout}\n${removed.stderr}`);
+  assert.equal(f.mapping().phase, "deleted");
+  assert.equal(f.transport().vms.length, 0);
+  assert.equal(f.transport().machines.length, 0);
+});
+
+test("an unseeded VM can be deleted without a checkout", (t) => {
+  const f = fixture(t);
+  successful(f.provision());
+  const mapped = f.mapping();
+  mapped.phase = "created";
+  delete mapped.seeded;
+  save(f.env.HERDR_PLUGIN_STATE_DIR, mapped);
+  fs.rmSync(path.join(f.directory, "remote-home", "project"), {
+    recursive: true,
+    force: true,
+  });
+  const removed = spawnSync(
+    process.execPath,
+    [path.join(ROOT, "src", "confirm.mjs")],
+    {
+      env: { ...f.env, HERDR_EXE_DEV_MAPPING: mapped.id },
+      input: "y\n",
+      encoding: "utf8",
+      timeout: 30000,
+    },
+  );
+  assert.equal(removed.status, 0, `${removed.stdout}\n${removed.stderr}`);
+  assert.equal(f.mapping().phase, "deleted");
+  assert.equal(f.transport().vms.length, 0);
 });
 
 test("confirmed deletion rejects unpublished work and active processes, and reconciles a lost delete response", (t) => {
