@@ -8,12 +8,13 @@ import test from "node:test";
 import { quote } from "../src/core.mjs";
 
 const version = spawnSync("herdr", ["--version"], { encoding: "utf8" });
+const installed = version.stdout.trim().match(/^herdr (0\.9\.[0-9]+)$/);
 test(
-  "native Herdr 0.9.0 preserves protocol envelopes and sends the quoted pane command intact",
+  "native Herdr 0.9.x preserves protocol envelopes and sends the quoted pane command intact",
   {
     skip:
-      version.status !== 0 || version.stdout.trim() !== "herdr 0.9.0"
-        ? "Herdr 0.9.0 is not installed"
+      version.status !== 0 || !installed
+        ? "Herdr 0.9.x is not installed"
         : false,
   },
   async (t) => {
@@ -43,7 +44,7 @@ test(
           pending = pending.slice(index + 1);
           requests.push(request);
           const responses = {
-            ping: { type: "pong", version: "0.9.0", protocol: 22 },
+            ping: { type: "pong", version: installed[1], protocol: 22 },
             "workspace.get": { type: "workspace_info", workspace },
             "workspace.list": {
               type: "workspace_list",

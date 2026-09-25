@@ -11,11 +11,11 @@ import {
   allocate,
   assertSameSeed,
   captureSeed,
+  checkLocalHerdr,
   cloneUrls,
   createBundle,
   credentialFreeUrl,
   initializeRoute,
-  inspectionScript,
   knownHostsFile,
   load,
   prepareVm,
@@ -318,77 +318,6 @@ test("mapping loads fail closed and allocation binds only one authenticated crea
   assert.throws(() => allocate(state, mapped, fake), /already attempted/);
 });
 
-test("inspection script runs in a real checkout and rejects destructive edge cases", (t) => {
-  const fixture = project(t, "nested");
-  const [, mapped] = entry(t, fixture);
-  const remote = path.join(fixture.base, "remote");
-  run("git", ["clone", "-q", fixture.bare, remote]);
-  run("git", ["-C", remote, "config", "user.name", "Fixture"]);
-  run("git", ["-C", remote, "config", "user.email", "fixture@example.test"]);
-  mapped.seed.origin = run("git", [
-    "-C",
-    remote,
-    "remote",
-    "get-url",
-    "origin",
-  ]);
-  const home = path.join(fixture.base, "home");
-  fs.mkdirSync(home);
-  const inspect = () => executeScript(inspectionScript(mapped), remote, home);
-  const initial = inspect();
-  assert.equal(initial.status, 0, `${initial.stdout}\n${initial.stderr}`);
-  fs.writeFileSync(path.join(remote, "dirty"), "x");
-  const dirty = inspect();
-  assert.notEqual(dirty.status, 0);
-  assert.match(dirty.stderr, /untracked file/);
-  fs.rmSync(path.join(remote, "dirty"));
-  fs.appendFileSync(
-    path.join(remote, run("git", ["-C", remote, "ls-files"]).split("\n")[0]),
-    "changed",
-  );
-  run("git", ["-C", remote, "stash", "push", "-qm", "fixture"]);
-  assert.notEqual(inspect().status, 0);
-  run("git", ["-C", remote, "stash", "clear"]);
-  run("git", [
-    "-C",
-    remote,
-    "worktree",
-    "add",
-    "-q",
-    path.join(fixture.base, "linked"),
-  ]);
-  assert.notEqual(inspect().status, 0);
-  run("git", [
-    "-C",
-    remote,
-    "worktree",
-    "remove",
-    "--force",
-    path.join(fixture.base, "linked"),
-  ]);
-  fs.writeFileSync(path.join(remote, "unpublished"), "x");
-  run("git", ["-C", remote, "add", "."]);
-  run("git", ["-C", remote, "commit", "-qm", "unpublished"]);
-  const unpublished = run("git", ["-C", remote, "rev-parse", "HEAD"]);
-  const ahead = inspect();
-  assert.notEqual(ahead.status, 0);
-  assert.match(ahead.stderr, /commit\(s\) that origin does not have/);
-  run("git", ["-C", remote, "reset", "--hard", "-q", "origin/HEAD"]);
-  run("git", ["-C", remote, "tag", "private-tag", unpublished]);
-  assert.notEqual(inspect().status, 0);
-  run("git", ["-C", remote, "tag", "-d", "private-tag"]);
-  run("git", ["-C", remote, "tag", "private-name", "HEAD"]);
-  assert.notEqual(inspect().status, 0);
-  run("git", ["-C", remote, "push", "origin", "refs/tags/private-name"]);
-  assert.equal(inspect().status, 0);
-  run("git", ["-C", remote, "tag", "-d", "private-name"]);
-  run("git", ["-C", remote, "checkout", "--detach", "-q"]);
-  assert.notEqual(inspect().status, 0);
-  run("git", ["-C", remote, "checkout", "-q", "-"]);
-  run("git", ["-C", remote, "remote", "remove", "origin"]);
-  assert.notEqual(inspect().status, 0);
-});
-
 test("ambiguous creates retain intent, routing mismatches fail, and setup retries keep the frozen seed", (t) => {
   const fixture = project(t, "flat");
   const [state, mapped] = entry(t, fixture);
@@ -482,38 +411,11 @@ test("seed races include origin changes", (t) => {
   );
 });
 
-test("a squash-merged branch counts as published even though its commits are not", (t) => {
-  const fixture = project(t, "nested");
-  const [, mapped] = entry(t, fixture);
-  const work = path.join(fixture.base, "squash-work");
-  run("git", ["clone", "-q", fixture.bare, work]);
-  run("git", ["-C", work, "config", "user.name", "Fixture"]);
-  run("git", ["-C", work, "config", "user.email", "fixture@example.test"]);
-  mapped.seed.origin = run("git", ["-C", work, "remote", "get-url", "origin"]);
-  const home = path.join(fixture.base, "squash-home");
-  fs.mkdirSync(home);
-  const inspect = () => executeScript(inspectionScript(mapped), work, home);
-  const base = run("git", ["-C", work, "rev-parse", "--abbrev-ref", "HEAD"]);
-  run("git", ["-C", work, "switch", "-qc", "feature"]);
-  fs.writeFileSync(path.join(work, "one"), "1");
-  run("git", ["-C", work, "add", "."]);
-  run("git", ["-C", work, "commit", "-qm", "one"]);
-  fs.writeFileSync(path.join(work, "two"), "2");
-  run("git", ["-C", work, "add", "."]);
-  run("git", ["-C", work, "commit", "-qm", "two"]);
-  const unmerged = inspect();
-  assert.notEqual(unmerged.status, 0);
-  assert.match(unmerged.stderr, /commit\(s\) that origin does not have/);
-  // Squash the branch onto the default branch the way a merged PR does: one new
-  // commit carrying the whole tree, sharing no commit with the branch itself.
-  const upstream = path.join(fixture.base, "squash-upstream");
-  run("git", ["clone", "-q", fixture.bare, upstream]);
-  run("git", ["-C", upstream, "config", "user.name", "Fixture"]);
-  run("git", ["-C", upstream, "config", "user.email", "fixture@example.test"]);
-  run("git", ["-C", upstream, "fetch", "-q", work, "feature"]);
-  run("git", ["-C", upstream, "merge", "--squash", "-q", "FETCH_HEAD"]);
-  run("git", ["-C", upstream, "commit", "-qm", "squashed feature"]);
-  run("git", ["-C", upstream, "push", "-q", "origin", `HEAD:${base}`]);
-  const merged = inspect();
-  assert.equal(merged.status, 0, `${merged.stdout}\n${merged.stderr}`);
+test("Herdr 0.9.x releases are accepted and other lines are refused", () => {
+  const accept = (reported) => checkLocalHerdr({}, () => reported);
+  accept("herdr 0.9.0");
+  accept("herdr 0.9.1");
+  accept("herdr 0.9.12");
+  for (const reported of ["herdr 0.8.9", "herdr 0.10.0", "herdr 1.9.0", "herdr 0.9"])
+    assert.throws(() => accept(reported), /0\.9\.x/);
 });

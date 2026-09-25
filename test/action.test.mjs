@@ -535,11 +535,10 @@ test("an unseeded VM can be deleted without a checkout", (t) => {
   assert.equal(f.transport().vms.length, 0);
 });
 
-test("confirmed deletion rejects unpublished work and active processes, and reconciles a lost delete response", (t) => {
+test("confirmed deletion rejects active processes, and reconciles a lost delete response", (t) => {
   const f = fixture(t);
   successful(f.provision());
   const mapped = f.mapping();
-  const remote = path.join(f.directory, "remote-home", "project");
   const remove = () =>
     spawnSync(process.execPath, [path.join(ROOT, "src", "confirm.mjs")], {
       env: { ...f.env, HERDR_EXE_DEV_MAPPING: mapped.id },
@@ -547,22 +546,10 @@ test("confirmed deletion rejects unpublished work and active processes, and reco
       encoding: "utf8",
       timeout: 30000,
     });
-  fs.writeFileSync(path.join(remote, "unpublished.txt"), "private work\n");
-  f.git(remote, "config", "user.name", "Fixture");
-  f.git(remote, "config", "user.email", "fixture@example.test");
-  f.git(remote, "add", ".");
-  f.git(remote, "commit", "-qm", "unpublished");
-  assert.notEqual(remove().status, 0);
-  assert.equal(f.transport().vms.length, 1);
-  f.git(remote, "push", f.bare, "HEAD:refs/heads/main");
   f.control({ busyPane: f.transport().panes.at(-1).pane_id });
   const busy = remove();
   assert.notEqual(busy.status, 0);
   assert.match(busy.stderr, /idle shell/);
-  f.control({ startAfterInspection: true });
-  const raced = remove();
-  assert.notEqual(raced.status, 0);
-  assert.match(raced.stderr, /idle shell/);
   f.control({ loseDeleteResponse: true, loseDeleteInventory: true });
   assert.notEqual(remove().status, 0);
   assert.equal(f.mapping().phase, "deleting");

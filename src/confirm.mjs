@@ -20,7 +20,7 @@ export async function confirm(
     throw new Error("No VM mapping exists for this workspace.");
   const displayed = load(stateDir, id);
   output.write(
-    `Deletion permanently destroys all VM data, including ignored files and databases.\nGit checks cannot back up non-Git data.\n`,
+    `Deletion permanently destroys all VM data, including uncommitted and unpushed Git work.\n`,
   );
   const reader = createInterface({
     input,

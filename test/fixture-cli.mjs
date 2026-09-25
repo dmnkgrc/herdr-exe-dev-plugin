@@ -153,16 +153,9 @@ if (mode === "ssh") {
         cwd: remoteEnvironment.HOME,
       },
     );
-    if (control.startAfterInspection && args.at(-1).includes("git rev-list")) {
-      control.busyPane = state.panes.at(-1).pane_id;
-      fs.writeFileSync(
-        path.join(directory, "control.json"),
-        JSON.stringify(control),
-      );
-    }
   }
 } else if (mode === "local-herdr") {
-  if (args[0] === "--version") console.log("herdr 0.9.0");
+  if (args[0] === "--version") console.log("herdr 0.9.1");
   else if (args[0] === "plugin" && args[1] === "pane" && args[2] === "open") {
     if (option("--plugin") !== "exe-dev")
       throw new Error("Wrong plugin identity.");
@@ -188,7 +181,7 @@ if (mode === "ssh") {
       throw new Error("Simulated lost cleanup response.");
   } else throw new Error(`Unexpected local Herdr argv: ${args}`);
 } else if (mode === "remote-herdr") {
-  if (args[0] === "--version") console.log("herdr 0.9.0");
+  if (args[0] === "--version") console.log("herdr 0.9.1");
   else if (args[0] === "--skill")
     console.log("# Fixture Herdr skill\nRemote fixture commands only.");
   else {

@@ -10,11 +10,13 @@ export const TAG = "herdr-exe-dev";
 export const INTEGRATION_HOST = "github.int.exe.xyz";
 export const SESSION = "exe-dev";
 export const REMOTE_ROOT = "/home/exedev/project";
-export const HERDR_VERSION = "0.9.0";
+// ponytail: fresh VMs get this hashed binary; any already-installed 0.9.x is kept
+export const HERDR_VERSION = "0.9.1";
 export const HERDR_ASSET =
-  "https://github.com/herdrdev/herdr/releases/download/v0.9.0/herdr-linux-x86_64";
+  "https://github.com/herdrdev/herdr/releases/download/v0.9.1/herdr-linux-x86_64";
 export const HERDR_SHA256 =
-  "4fa1a01158dd8043da92d31b270780b0dcc10603038d9b61cac4d81ab63fb71f";
+  "2a02fed16beb651ef006e1d43f048f652ca4dc58ad053cd2d44450563d5c54b7";
+const HERDR_RELEASE = /^herdr 0\.9\.[0-9]+$/;
 const ID = /^[0-9a-f]{64}$/;
 const REVISION = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 const NAME = /^[a-z0-9][a-z0-9-]{2,62}$/;
@@ -1062,7 +1064,7 @@ export function prepareVm(stateDir, entry, bundle, transport = {}) {
 export function ensureRemoteHerdr(entry, execute = run) {
   remote(
     entry,
-    `set -eu\nexport PATH="$HOME/.local/bin:$PATH"\nif command -v herdr >/dev/null 2>&1; then herdr --version | grep -Fxq 'herdr ${HERDR_VERSION}' || { echo 'Existing remote Herdr is incompatible; refusing to replace or restart it.' >&2; exit 1; }; elif test -e "$HOME/.local/bin/herdr"; then echo 'Existing remote Herdr path is not executable; refusing to replace it.' >&2; exit 1; else test "$(uname -m)" = x86_64; test ! -L "$HOME/.local"; test ! -L "$HOME/.local/bin"; mkdir -p "$HOME/.local/bin"; tmp=$(mktemp "$HOME/.local/bin/herdr.XXXXXX"); trap 'rm -f "$tmp"' EXIT; curl --fail --location --silent --show-error ${quote(HERDR_ASSET)} -o "$tmp"; printf '%s  %s\\n' ${quote(HERDR_SHA256)} "$tmp" | sha256sum --check --status; chmod 755 "$tmp"; mv -n "$tmp" "$HOME/.local/bin/herdr"; herdr --version | grep -Fxq 'herdr ${HERDR_VERSION}'; fi`,
+    `set -eu\nexport PATH="$HOME/.local/bin:$PATH"\nif command -v herdr >/dev/null 2>&1; then herdr --version | grep -Eq ${quote(HERDR_RELEASE.source)} || { echo 'Existing remote Herdr is incompatible; refusing to replace or restart it.' >&2; exit 1; }; elif test -e "$HOME/.local/bin/herdr"; then echo 'Existing remote Herdr path is not executable; refusing to replace it.' >&2; exit 1; else test "$(uname -m)" = x86_64; test ! -L "$HOME/.local"; test ! -L "$HOME/.local/bin"; mkdir -p "$HOME/.local/bin"; tmp=$(mktemp "$HOME/.local/bin/herdr.XXXXXX"); trap 'rm -f "$tmp"' EXIT; curl --fail --location --silent --show-error ${quote(HERDR_ASSET)} -o "$tmp"; printf '%s  %s\\n' ${quote(HERDR_SHA256)} "$tmp" | sha256sum --check --status; chmod 755 "$tmp"; mv -n "$tmp" "$HOME/.local/bin/herdr"; herdr --version | grep -Fxq 'herdr ${HERDR_VERSION}'; fi`,
     {},
     execute,
   );
@@ -1103,9 +1105,9 @@ function listed(value, label) {
         : undefined;
 }
 export function checkLocalHerdr(entry, execute = run) {
-  if (execute(localHerdr(entry), ["--version"]) !== `herdr ${HERDR_VERSION}`)
+  if (!HERDR_RELEASE.test(execute(localHerdr(entry), ["--version"])))
     throw new Error(
-      `This plugin is verified for Herdr ${HERDR_VERSION}; refusing a different local release.`,
+      "This plugin is verified for Herdr 0.9.x; refusing a different local release.",
     );
 }
 function machineProfiles(entry, execute) {
@@ -1321,58 +1323,6 @@ export function openPane(stateDir, entry, argvValue, title, execute = run) {
     );
   return pane;
 }
-export function inspectionScript(entry) {
-  const fallback = integrationUrl(entry.seed.origin);
-  const origin = entry.seed.origin
-    ? `url=$(git remote get-url origin)
-test "$url" = ${quote(entry.seed.origin)}${fallback ? ` || test "$url" = ${quote(fallback)}` : ""} || { printf '%s\\n' "The VM's origin is $url, not the recorded ${entry.seed.origin}; deletion cannot prove its work is published." >&2; exit 1; }
-timeout 45 git fetch --quiet --prune --no-tags origin '+refs/heads/*:refs/remotes/origin/*' || { printf '%s\\n' "Could not reach origin from the VM, so deletion cannot prove its work is published." >&2; exit 1; }
-`
-    : `{ printf '%s\\n' "The VM has no origin, so deletion cannot prove its work is published." >&2; exit 1; }
-`;
-  return `set -eu
-fail() { printf '%s\n' "$1" >&2; exit 1; }
-exec 9>"$HOME/.herdr-exe-setup.lock"
-flock -n 9 || { printf '%s\\n' "Remote setup still holds its lock on the VM; wait for it to finish, then delete again." >&2; exit 1; }
-repo=${quote(REMOTE_ROOT)}
-cd "$repo" || { printf '%s\\n' "The VM has no checkout at $repo." >&2; exit 1; }
-test "$(git rev-parse --show-toplevel)" = "$repo" || { printf '%s\\n' "The checkout at $repo is not the root of the VM's Git repository." >&2; exit 1; }
-${origin}stashed=$(git stash list | wc -l | tr -d ' ')
-test "$stashed" = 0 || { printf '%s\\n' "The VM has $stashed stashed change(s) that deletion would destroy. Drop or publish them, then delete again." >&2; exit 1; }
-worktrees=$(git worktree list --porcelain | grep -c '^worktree ' || true)
-test "$worktrees" = 1 || { printf '%s\\n' "The VM has $worktrees Git worktrees and deletion needs exactly one. Remove the extra ones, then delete again." >&2; exit 1; }
-changed=$(git status --porcelain --untracked-files=all | wc -l | tr -d ' ')
-test "$changed" = 0 || { printf '%s\\n' "The VM has $changed uncommitted or untracked file(s) that deletion would destroy. Commit and push them, then delete again." >&2; exit 1; }
-test -n "$(git symbolic-ref --quiet HEAD)" || { printf '%s\\n' "The VM's checkout is on a detached HEAD, so deletion cannot prove its commits are published." >&2; exit 1; }
-ahead=$(git rev-list --branches --tags HEAD --not --remotes=origin | wc -l | tr -d ' ')
-if test "$ahead" != 0; then
-  stray=$(git rev-list --branches --tags --not --remotes=origin HEAD | wc -l | tr -d ' ')
-  test "$stray" = 0 || { printf '%s\\n' "The VM has $stray commit(s) on branches or tags other than the checked-out one that origin does not have, which deletion would destroy. Push them, then delete again." >&2; exit 1; }
-  default=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD || true)
-  if test -z "$default"; then
-    for candidate in origin/main origin/master; do
-      if git rev-parse --verify --quiet "$candidate" >/dev/null; then default=$candidate; break; fi
-    done
-  fi
-  test -n "$default" || { printf '%s\\n' "The VM has $ahead commit(s) that origin does not have and origin has no default branch to compare them against. Push them, then delete again." >&2; exit 1; }
-  # A squash merge rewrites the branch into one new commit, so its own commits
-  # never reach origin. Compare the branch as a single patch instead.
-  base=$(git merge-base HEAD "$default")
-  probe=$(git commit-tree "$(git rev-parse 'HEAD^{tree}')" -p "$base" -m squash-probe)
-  case "$(git cherry "$default" "$probe")" in
-    -*) : ;;
-    *) { printf '%s\\n' "The VM has $ahead commit(s) that origin does not have, and their changes are not in $default either, so deletion would destroy them. Push or merge them, then delete again." >&2; exit 1; } ;;
-  esac
-fi
-local_tags=$(git for-each-ref --format='%(objectname) %(refname)' refs/tags)
-if test -n "$local_tags"; then
-  remote_tags=$(timeout 30 git ls-remote --tags --refs origin) || { printf '%s\\n' "Could not list origin's tags from the VM, so deletion cannot prove its tags are published." >&2; exit 1; }
-  while read -r object ref; do
-    printf '%s\n' "$remote_tags" | grep -Fxq "$(printf '%s\t%s' "$object" "$ref")" || { printf '%s\\n' "The VM has $ref, which origin does not have. Push it, then delete again." >&2; exit 1; }
-  done <<< "$local_tags"
-fi`;
-}
-
 function busy(info) {
   const names = Array.isArray(info?.foreground_processes)
     ? info.foreground_processes.map((process) => process?.name).filter(text)
@@ -1456,18 +1406,6 @@ export function deleteVm(stateDir, entry, typedName, transport = {}) {
   machineProfile(entry, execute);
   progress("Checking every pane on the VM is an idle shell.");
   activePanes(entry, execute);
-  if (entry.seeded) {
-    progress("Fetching origin to prove the VM's Git work is published.");
-    try {
-      remote(entry, inspectionScript(entry), { timeout: 120000 }, execute);
-    } catch (error) {
-      // The script reports its own refusal; an "ssh failed" prefix only buries it.
-      throw new Error(error.message.replace(/^ssh failed: /, ""));
-    }
-    progress("Re-checking panes and ownership before destroying anything.");
-    activePanes(entry, execute);
-    validateExisting(entry, execute);
-  }
   entry.phase = "deleting";
   save(stateDir, entry);
   progress(`Asking the provider to destroy ${entry.vm.name}.`);

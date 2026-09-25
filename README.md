@@ -2,7 +2,7 @@
 
 One persistent exe.dev VM per committed Git worktree. The laptop supplies the initial Git bundle; editing, Git operations, agents and project commands then run on the VM. Nothing is synchronized back.
 
-This is a standalone, locally tested plugin. It has not been tested against a live VM. It currently requires **Herdr 0.9.0**, Node 22+, Git and OpenSSH on Linux or macOS. Remote bootstrap targets the stock Linux x86_64 exe.dev image. There are no npm dependencies or build steps.
+This is a standalone, locally tested plugin. It has not been tested against a live VM. It currently requires **Herdr 0.9.x**, Node 22+, Git and OpenSSH on Linux or macOS. Remote bootstrap targets the stock Linux x86_64 exe.dev image. There are no npm dependencies or build steps.
 
 ## Install and configure
 
@@ -196,9 +196,9 @@ Agents share the remote checkout. Concurrent writers need separate remote Git wo
 
 ## Deletion safeguards and limits
 
-Confirmation reloads the mapping under its lock and refuses if it changed while the prompt was open. Deletion checks the recorded VM name, creation time, tag and SSH route; all live Herdr panes and their foreground processes; and the actual remote checkout. It refuses dirty/untracked work, stashes, linked worktrees, detached HEAD, unpublished commits or tags, a missing/changed origin, and failed bounded fetches. Liveness and provider identity are checked again after Git inspection.
+Confirmation reloads the mapping under its lock and refuses if it changed while the prompt was open. Deletion checks the recorded VM name, creation time, tag and SSH route, and that all live Herdr panes are idle shells. It does not inspect the VM's Git checkout: uncommitted, unpushed or stashed work is destroyed.
 
-Stop agents **and all other VM writers/services** before confirming, and keep them stopped until deletion finishes. These are checks, not an atomic write freeze. Processes outside Herdr are not comprehensively inventoried. Git checks do not back up ignored files, databases or other VM data; typed confirmation acknowledges their destruction.
+Stop agents **and all other VM writers/services** before confirming, and keep them stopped until deletion finishes. These are checks, not an atomic write freeze. Processes outside Herdr are not comprehensively inventoried. Typed confirmation acknowledges the destruction of all VM data.
 
 exe.dev deletion is name-only. A concurrent delete/recreate of the same name can race the final identity check. Do not reuse a VM name while an operation is in progress. Only a provider-side conditional delete could remove that remaining race.
 
@@ -210,6 +210,6 @@ An uncertain delete is recorded before the request. Recovery requires authentica
 npm run check
 ```
 
-Tests run generated scripts against disposable Git repositories and bare origins, exercise action entrypoints through rejecting subprocess fixtures, and use real `ssh -G` with temporary configuration. When Herdr 0.9.0 is installed, an additional test runs its real CLI against a temporary fake Unix socket to verify envelopes and pane-command serialization. No test connects to exe.dev or a live Herdr server.
+Tests run generated scripts against disposable Git repositories and bare origins, exercise action entrypoints through rejecting subprocess fixtures, and use real `ssh -G` with temporary configuration. When a Herdr 0.9.x release is installed, an additional test runs its real CLI against a temporary fake Unix socket to verify envelopes and pane-command serialization. No test connects to exe.dev or a live Herdr server.
 
 Deferred: warm bases, shared MCP/OAuth gateways, browser setup, local-agent adapters and automatic provisioning. The action/progress UX was informed by [herdr-sprites-plugin](https://github.com/superfly/herdr-sprites-plugin); VM authority, worktree ownership and credential handling are intentionally different.
